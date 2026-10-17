@@ -88,7 +88,6 @@ class Engine:
         device: str,
         steps: int,
         cfg: float,
-        latent_seconds: int,
     ) -> None:
         sys.path.insert(0, str(code_dir))
         import torch  # pyright: ignore[reportMissingImports]
@@ -102,8 +101,6 @@ class Engine:
         self.device = device
         self.steps = steps
         self.cfg = cfg
-        # 0: the model's own fixed latent (30 s); shorter latents are faster
-        self.latent_seconds = latent_seconds or None
         self.pipe = MossSoundEffectPipeline.from_pretrained(
             str(model_dir), torch_dtype=torch.bfloat16, device=device
         )
@@ -127,17 +124,12 @@ class Engine:
             cfg_scale=self.cfg,
             seed=seed,
             negative_prompt=negative,
-            max_inference_seconds=self.latent_seconds,
             progress_bar_cmd=bar,
         )
         if self.device == "mps":
             self.torch.mps.synchronize()
         data = audio.float().cpu().numpy()[0]
-        return data, {
-            "steps": steps,
-            "cfg": self.cfg,
-            "latent_seconds": self.latent_seconds or self.pipe.max_inference_seconds,
-        }
+        return data, {"steps": steps, "cfg": self.cfg}
 
 
 def main() -> int:
@@ -146,9 +138,8 @@ def main() -> int:
     parser.add_argument("--code-dir", required=True)  # the MOSS-TTS checkout
     parser.add_argument("--model-dir", required=True)  # the downloaded model repository
     parser.add_argument("--device", default="mps")
-    parser.add_argument("--steps", type=int, default=100)
+    parser.add_argument("--steps", type=int, default=50)
     parser.add_argument("--cfg", type=float, default=4.0)
-    parser.add_argument("--latent-seconds", type=int, default=0)
     args = parser.parse_args()
     channel = protocol.open_channel(args.proto_fd)
     started = time.monotonic()
@@ -159,7 +150,6 @@ def main() -> int:
             device=args.device,
             steps=args.steps,
             cfg=args.cfg,
-            latent_seconds=args.latent_seconds,
         )
     except Exception as exc:
         return protocol.fatal(channel, exc)

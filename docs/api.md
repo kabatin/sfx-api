@@ -234,6 +234,9 @@ clips are left exactly as the engine made them.
 ### `moss-sfx-v2`
 
 - MOSS-SoundEffect v2.0 with guidance on, so `negative_prompt` is used. 48 kHz mono.
-- Much slower than `stable-audio-3-sfx` (see `typical_seconds`): the model denoises a fixed-length
-  latent whatever the requested duration.
+- Much slower than `stable-audio-3-sfx` (minutes per clip; see `typical_seconds`): the model always
+  denoises a 30-second latent and cuts the requested length out of it, so a 0.5 s clip costs as much
+  as a 10 s one. A shorter latent is not offered: it broke the model (only ~1.5 s of sound, then
+  silence).
+- Its output runs loud (RMS 0.3–0.5 in the trial); clips are turned down to the −1 dBFS ceiling.
 - Weights: Apache-2.0.

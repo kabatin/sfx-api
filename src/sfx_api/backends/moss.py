@@ -4,9 +4,12 @@ MOSS-TTS repository) with PyTorch on MPS, run by :mod:`sfx_api.workers.moss_work
 Facts this module relies on (README "Measurements" has the numbers):
 - the model repository (OpenMOSS-Team/MOSS-SoundEffect-v2.0, 11.2 GB) is downloaded to a
   local directory: a 1.4 B DiT (fp32), Qwen3-1.7B text encoder, DAC VAE;
-- output is 48 kHz mono; the pipeline always denoises a fixed latent (30 s unless
-  ``latent_seconds`` says less) and crops it, so short clips cost as much as long ones: a clip
-  takes ``steps * seconds_per_step * latent / 30 s`` whatever its length;
+- output is 48 kHz mono; the pipeline always denoises a fixed 30 s latent and crops it, so a
+  short clip costs as much as a long one (``steps * seconds_per_step``). A shorter latent
+  (upstream's ``max_inference_seconds``) breaks the model: with 10 s, every clip held only
+  ~1.5 s of sound followed by silence, at a different pitch;
+- 50 steps (the upstream demo's default; upstream's API default is 100) sounded the same as 100
+  in the trial at half the time;
 - guidance is on (cfg > 1), so negative prompts work. It must stay on: the guided step returns
   float32 latents, which the float32 VAE decode needs off CUDA.
 """
@@ -17,7 +20,7 @@ import os
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 from sfx_api.backends.engine import EngineConfig
 from sfx_api.backends.resident import WORKERS_DIR, ResidentBackend, parse_options
@@ -33,9 +36,6 @@ MODEL_FILES = (
     "text_encoder",
     "tokenizer",
 )
-# the model's own latent length; shorter ones must still hold the longest clip (10 s)
-FULL_LATENT_SECONDS = 30
-MIN_LATENT_SECONDS = 10
 LOAD_SECONDS = 40.0
 # one guided DiT step (two passes) on a 30 s latent, M5 32 GB: 273 s for 100 steps
 SECONDS_PER_STEP = 2.7
@@ -53,24 +53,14 @@ class MossOptions(BaseModel):
     model_dir: Path | None = None
     python: Path | None = None  # default: <code_dir>/../.venv/bin/python
     device: str = Field(default="mps", pattern=r"^(mps|cpu)$")
-    steps: int = Field(default=100, ge=1, le=200)
+    steps: int = Field(default=50, ge=1, le=200)
     cfg: float = Field(default=4.0, gt=1.0, le=10.0)
-    # denoised latent length: 0 = the model's own (30 s), else 10-30 (it must hold a 10 s clip)
-    latent_seconds: int = Field(default=0, ge=0, le=FULL_LATENT_SECONDS)
     resident_idle_seconds: float = Field(default=300.0, ge=0.0, le=3600.0)
     start_timeout_s: float = Field(default=300.0, ge=10.0, le=3600.0)
     stop_grace_s: float = Field(default=15.0, ge=1.0, le=120.0)
     load_seconds: float = Field(default=LOAD_SECONDS, gt=0.0, le=3600.0)
     clip_overhead_seconds: float = Field(default=CLIP_OVERHEAD_SECONDS, ge=0.0, le=3600.0)
-    # one step on a 30 s latent; shorter latents scale it down
     seconds_per_step: float = Field(default=SECONDS_PER_STEP, gt=0.0, le=600.0)
-
-    @field_validator("latent_seconds")
-    @classmethod
-    def _holds_the_longest_clip(cls, value: int) -> int:
-        if value and value < MIN_LATENT_SECONDS:
-            raise ValueError(f"must be 0 or at least {MIN_LATENT_SECONDS}")
-        return value
 
 
 class MossBackend(ResidentBackend):
@@ -126,8 +116,6 @@ class MossBackend(ResidentBackend):
                 str(o.steps),
                 "--cfg",
                 str(o.cfg),
-                "--latent-seconds",
-                str(o.latent_seconds),
             ),
             cwd=self.code_dir or Path(),
             state_dir=self.state_dir,
@@ -149,8 +137,7 @@ class MossBackend(ResidentBackend):
 
     def typical_seconds(self, duration_s: float) -> float:
         o = self.options
-        latent = (o.latent_seconds or FULL_LATENT_SECONDS) / FULL_LATENT_SECONDS
-        return o.clip_overhead_seconds + o.seconds_per_step * o.steps * latent
+        return o.clip_overhead_seconds + o.seconds_per_step * o.steps
 
     # -- health ----------------------------------------------------------------------
     def unavailable_reason(self) -> str | None:

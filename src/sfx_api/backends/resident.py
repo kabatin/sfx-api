@@ -139,7 +139,7 @@ class ResidentBackend(SoundBackend):
                     "seconds": round(outcome.seconds, 3),
                     **{
                         key: outcome.reply[key]
-                        for key in ("gain_db", "cfg", "steps", "latent_seconds")
+                        for key in ("gain_db", "cfg", "steps")
                         if key in outcome.reply
                     },
                 }

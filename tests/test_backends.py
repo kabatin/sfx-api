@@ -226,7 +226,7 @@ def moss_install(tmp_path: Path) -> tuple[Path, Path]:
 def test_moss_worker_arguments(tmp_path: Path) -> None:
     code, model = moss_install(tmp_path)
     backend = MossBackend(
-        MossOptions(code_dir=code, model_dir=model, steps=50, latent_seconds=10),
+        MossOptions(code_dir=code, model_dir=model, steps=30),
         state_dir=tmp_path / "engine",
     )
     config = backend.engine.config
@@ -234,32 +234,29 @@ def test_moss_worker_arguments(tmp_path: Path) -> None:
     assert config.python == tmp_path / "moss" / ".venv" / "bin" / "python"
     assert config.args == (
         "--code-dir", str(code), "--model-dir", str(model), "--device", "mps",
-        "--steps", "50", "--cfg", "4.0", "--latent-seconds", "10",
+        "--steps", "30", "--cfg", "4.0",
     )  # fmt: skip
     assert config.env["HF_HUB_OFFLINE"] == "1"
     assert backend.uses_negative_prompt
-    MossOptions(latent_seconds=0)
-    MossOptions(latent_seconds=10)
 
 
-def test_moss_estimates_follow_steps_and_latent(tmp_path: Path) -> None:
+def test_moss_estimates_follow_steps(tmp_path: Path) -> None:
     code, model = moss_install(tmp_path)
 
     def backend(**options: object) -> MossBackend:
         opts = MossOptions.model_validate({"code_dir": code, "model_dir": model} | options)
         return MossBackend(opts, state_dir=tmp_path)
 
-    assert backend().typical_seconds(2.0) == pytest.approx(5.0 + 2.7 * 100)
+    assert backend().typical_seconds(2.0) == pytest.approx(5.0 + 2.7 * 50)
     assert backend().typical_seconds(10.0) == backend().typical_seconds(0.5)  # fixed latent
-    short = backend(steps=50, latent_seconds=10)
-    assert short.typical_seconds(2.0) == pytest.approx(5.0 + 2.7 * 50 / 3)
-    plan = short.plan(request(engine="moss", seeds=(1, 3)))
-    assert plan.estimate_seconds == pytest.approx(40.0 + 2 * (5.0 + 45.0))
+    slow = backend(steps=100)
+    assert slow.typical_seconds(2.0) == pytest.approx(5.0 + 270.0)
+    plan = slow.plan(request(engine="moss", seeds=(1, 3)))
+    assert plan.estimate_seconds == pytest.approx(40.0 + 2 * 275.0)
 
 
 @pytest.mark.parametrize(
-    "options",
-    [{"latent_seconds": 5}, {"latent_seconds": 31}, {"cfg": 1.0}, {"steps": 0}],
+    "options", [{"cfg": 1.0}, {"steps": 0}, {"latent_seconds": 10}, {"device": "cuda"}]
 )
 def test_moss_refuses_settings_that_would_fail_jobs(options: dict) -> None:
     with pytest.raises(ValueError):
