@@ -8,8 +8,8 @@ Facts this module relies on (README "Measurements" has the numbers):
   short clip costs as much as a long one (``steps * seconds_per_step``). A shorter latent
   (upstream's ``max_inference_seconds``) breaks the model: with 10 s, every clip held only
   ~1.5 s of sound followed by silence, at a different pitch;
-- 50 steps (the upstream demo's default; upstream's API default is 100) sounded the same as 100
-  in the trial at half the time;
+- 50 steps (the upstream demo's default; upstream's API default is 100) measured the same as 100
+  (spectrum and envelope) at half the time;
 - guidance is on (cfg > 1), so negative prompts work. It must stay on: the guided step returns
   float32 latents, which the float32 VAE decode needs off CUDA.
 """

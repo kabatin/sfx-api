@@ -57,7 +57,7 @@ needs only a different workflow id, body and output type. The full contract is [
 ### Measurements
 
 On the target Mac (MacBook Pro M5, 32 GB, macOS 26.5). Peak memory is macOS's `phys_footprint` of the
-worker (sampled every second, a lower bound) or MPS's driver allocation for MOSS.
+worker (sampled every second, a lower bound).
 
 **Stable Audio 3** (sm-sfx, 8 steps, no guidance), through this server, seconds per clip
 (`timings.backend_seconds`):
