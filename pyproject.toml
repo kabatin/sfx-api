@@ -1,0 +1,82 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sfx-api"
+version = "0.1.0"
+description = "Make sound effects with Stable Audio 3 and MOSS-SoundEffect on an Apple Silicon Mac as an HTTP job API"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+requires-python = ">=3.12"
+authors = [{ name = "kabatin" }]
+keywords = ["stable-audio", "sound-effects", "text-to-audio", "apple-silicon", "fastapi"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Framework :: FastAPI",
+  "Operating System :: MacOS",
+  "Programming Language :: Python :: 3",
+  "Topic :: Multimedia :: Sound/Audio",
+]
+dependencies = [
+  "fastapi>=0.132",  # older versions parse Content-Type-less bodies as JSON (CSRF)
+  "uvicorn>=0.30",
+  "pydantic>=2.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/kabatin/sfx-api"
+Issues = "https://github.com/kabatin/sfx-api/issues"
+
+[project.scripts]
+sfx-api = "sfx_api.cli:main"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+  "pyright>=1.1.380",
+  "httpx2>=2.13.1",
+  "numpy>=1.26",  # the worker's limiter, run in tests against tests/fake_acestep
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sfx_api"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "PTH", "T20"]
+ignore = [
+  "S603", # subprocess without shell=True is exactly what we want
+  "S607", # tools (pmset, memory_pressure) are resolved from PATH on purpose
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S104", "S105", "S106", "S108", "PTH"]
+# the fake engine prints to stdout on purpose: the worker must keep it off the protocol
+"tests/fake_worker.py" = ["T201"]
+
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "standard"
+pythonVersion = "3.12"
+# the engine workers import their shared protocol module as a sibling script
+extraPaths = ["src/sfx_api/workers"]
+
+[tool.coverage.run]
+# the engine workers run in their engines' own Pythons as child processes (the real-engine
+# tests drive them); the shared protocol module runs in tests/fake_worker.py and in-process
+omit = ["*/workers/sa3_worker.py", "*/workers/moss_worker.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=sfx_api --cov-report=term-missing --cov-fail-under=80"
+markers = [
+  "real: runs a real engine generation (opt-in: SFX_API_REAL_TESTS=1)",
+]
