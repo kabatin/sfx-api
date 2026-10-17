@@ -17,7 +17,13 @@ import pytest
 from sfx_api.backends import build_backend
 from sfx_api.backends.base import GenerationRequest
 from sfx_api.backends.engine import EngineConfig
-from sfx_api.backends.moss import MossBackend, MossOptions
+from sfx_api.backends.moss import (
+    CLIP_OVERHEAD_SECONDS,
+    LOAD_SECONDS,
+    SECONDS_PER_STEP,
+    MossBackend,
+    MossOptions,
+)
 from sfx_api.backends.resident import WORKERS_DIR, ResidentBackend
 from sfx_api.backends.router import EngineRouter
 from sfx_api.backends.sa3 import MODEL_FILES, Sa3Backend, Sa3Options
@@ -247,12 +253,15 @@ def test_moss_estimates_follow_steps(tmp_path: Path) -> None:
         opts = MossOptions.model_validate({"code_dir": code, "model_dir": model} | options)
         return MossBackend(opts, state_dir=tmp_path)
 
-    assert backend().typical_seconds(2.0) == pytest.approx(5.0 + 2.7 * 50)
+    per_clip = CLIP_OVERHEAD_SECONDS + SECONDS_PER_STEP * 50
+    assert backend().typical_seconds(2.0) == pytest.approx(per_clip)
+    assert 80.0 < per_clip < 100.0  # measured 86-88 s on the M5
     assert backend().typical_seconds(10.0) == backend().typical_seconds(0.5)  # fixed latent
     slow = backend(steps=100)
-    assert slow.typical_seconds(2.0) == pytest.approx(5.0 + 270.0)
+    slow_clip = CLIP_OVERHEAD_SECONDS + SECONDS_PER_STEP * 100
+    assert slow.typical_seconds(2.0) == pytest.approx(slow_clip)
     plan = slow.plan(request(engine="moss", seeds=(1, 3)))
-    assert plan.estimate_seconds == pytest.approx(40.0 + 2 * 275.0)
+    assert plan.estimate_seconds == pytest.approx(LOAD_SECONDS + 2 * slow_clip)
 
 
 @pytest.mark.parametrize(

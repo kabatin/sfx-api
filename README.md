@@ -20,8 +20,8 @@ needs only a different workflow id, body and output type. The full contract is [
 
 | workflow | engine | output | speed (loaded, per clip) |
 |---|---|---|---|
-| `stable-audio-3-sfx` | Stable Audio 3 sm-sfx, MLX | 44.1 kHz stereo | **0.4–0.5 s** for 2–10 s of sound |
-| `moss-sfx-v2` | MOSS-SoundEffect v2.0, PyTorch MPS | 48 kHz mono | ~2–3 minutes whatever the length |
+| `stable-audio-3-sfx` | Stable Audio 3 sm-sfx, MLX | 44.1 kHz stereo | **0.4–0.6 s** for 2–10 s of sound |
+| `moss-sfx-v2` | MOSS-SoundEffect v2.0, PyTorch MPS | 48 kHz mono | ~90 s whatever the length |
 
 - **Closed workflows.** Clients send `prompt`, `negative_prompt`, `duration_sec` (0.5–10), a seed and a
   count — never model names, steps, guidance or paths.
@@ -72,16 +72,20 @@ installing took 2.6 s). The same seed gave a bit-identical clip; one loaded mode
 (bit-identical to a model loaded for that length). With guidance on (`negative_prompt_cfg = 3.0`) a clip
 took 0.48–0.54 s and peaked 1–4 dB hotter before the level stage.
 
-**MOSS-SoundEffect v2.0** (cfg 4, PyTorch 2.9.1 on MPS), per clip with the models loaded:
+**MOSS-SoundEffect v2.0** (cfg 4, PyTorch 2.9.1 on MPS), seconds per clip with the models loaded and
+the GPU otherwise idle:
 
 | setting | 2 s clip | sound |
 |---|---|---|
-| 100 steps, 30 s latent (upstream defaults) | 273 s | full length, tonal screech |
-| **50 steps, 30 s latent (this server's default)** | MOSS_S50_MEASURED | same character as 100 steps |
-| 50 steps, 10 s latent | 27 s | **broken**: ~1.5 s of sound, then silence, different pitch |
+| 100 steps, 30 s latent (upstream defaults) | 168 | full length, tonal screech |
+| **50 steps, 30 s latent (this server's default)** | **86–88** | same character as 100 steps (spectral centroid 3.07 vs 2.95 kHz, envelope correlation 0.99) |
+| 50 steps, 10 s latent | 27 | **broken**: ~1.5 s of sound, then silence, different pitch |
 
-Loading takes ~30 s (import 14 s + weights 14–17 s); MPS memory ~21 GB with the 30 s latent. Short and
-long clips cost the same (the latent is fixed).
+Through this server (`timings.backend_seconds`, 50 steps): 2 s / 5 s / 10 s clips took 87.5 / 87.1 /
+87.2 s with the models loaded; the first job took 104.5 s (load 16.2 s + clip 88.3 s). Short and long
+clips cost the same (the latent is fixed), so a job of `count` n takes about n × 88 s. Loading takes
+15–16 s with the files in the OS cache and ~28 s without. Memory: 21–22 GB `phys_footprint` (20 GB of it
+on the GPU). While another GPU job was running on the Mac, a 50-step clip took 266 s.
 
 ## Setup on the Mac
 
@@ -288,7 +292,23 @@ curl -s "${AUTH[@]}" -X DELETE "$API/v1/jobs/$JOB"          # cancel (200 cancel
 
 ## Verification status
 
-VERIFICATION_PLACEHOLDER
+Checked on the target Mac (2026-10-18) with `doctor`, the real-engine test (both engines, `count` 2,
+seeds `seed` and `seed + 2`), and a run through the server on loopback for each workflow: health,
+capabilities, a first job that loads the models, 2 / 5 / 10 s clips with them loaded, four example
+sounds (tyre screech, engine rev, whoosh, impact; Stable Audio 3 with `count` 2, MOSS with `count` 1)
+and an idempotent resubmit. Every job succeeded. Output: 16-bit WAV, 44.1 kHz stereo (Stable Audio 3)
+and 48 kHz mono (MOSS), exactly the requested length, peaks at or under −1.0 dBFS. A 10 s MOSS clip
+has sound to the end. While MOSS ran, `/v1/health` showed it loaded and Stable Audio 3 unloaded. The
+Stable Audio 3 models were released when vpipe-api became busy and loaded again for the next job. The
+protocol, cancel/timeout, crashes, idle release and the level stage are covered by tests against a
+stand-in worker.
+
+The clips were checked by measurement (length, level, loudness per second, spectrum), not by
+listening.
+
+Not checked: cancelling a job on a real engine, `count` 3–4 in one job, Stable Audio 3 with
+`negative_prompt_cfg` > 1 through the server (measured outside it), MOSS on `device = "cpu"`,
+access from another machine with a token.
 
 ## Development
 

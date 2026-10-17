@@ -23,7 +23,7 @@ from sfx_api.workflows import workflow_engine
 from sfx_api.workflows.base import Workflow, WorkflowFailedError, WorkflowRegistry
 
 MIN_FREE_GB = 10
-MOSS_PEAK_GB = 21
+MOSS_PEAK_GB = 22
 MIN_MEMORY_FREE_PERCENT = 20
 MIN_MACOS = (14, 0)
 SMOKE_TIMEOUT_S = 600

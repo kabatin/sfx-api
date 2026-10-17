@@ -36,10 +36,12 @@ MODEL_FILES = (
     "text_encoder",
     "tokenizer",
 )
-LOAD_SECONDS = 40.0
-# one guided DiT step (two passes) on a 30 s latent, M5 32 GB: 273 s for 100 steps
-SECONDS_PER_STEP = 2.7
-CLIP_OVERHEAD_SECONDS = 5.0
+# 15-16 s with the files in the OS cache, 28 s without
+LOAD_SECONDS = 30.0
+# one guided DiT step (two passes) on a 30 s latent, M5 32 GB, GPU otherwise idle:
+# 86-88 s for 50 steps, 168 s for 100 (the rest is text encoding and the VAE decode)
+SECONDS_PER_STEP = 1.62
+CLIP_OVERHEAD_SECONDS = 6.0
 
 
 class MossOptions(BaseModel):
