@@ -242,3 +242,27 @@ clips are left exactly as the engine made them.
   ceiling; some come out quieter (one of eight in the check peaked at −11 dBFS) and stay as they are.
   Even out loudness on the client if clips are used side by side.
 - Weights: Apache-2.0.
+
+## Writing prompts
+
+The prompt is what shapes the sound; `seed` only picks a variation of it. Change the wording first.
+
+- Write one or two plain English sentences about one scene: the source, what it does, the material,
+  the space (close or distant, dry or reverberant), the attack and decay, and any motion (approaching,
+  passing by). Stable Audio 3's own prompt assistant asks for exactly this
+  ([`reprompt.py`](https://github.com/Stability-AI/stable-audio-3/blob/main/stable_audio_3/interface/reprompt.py)).
+  Its examples: "Car speeding past at high velocity, doppler effect, realistic whoosh", "Punch impact
+  with deep bass hit, cinematic trailer style", "Heavy rain on a tin roof with distant thunder rolls".
+- Do not write the length into the prompt; send `duration_sec`. MOSS adds its own duration tag to the
+  prompt, and Stable Audio 3's interface strips "Length: …" before the model sees it.
+- Keep clips short: Stable Audio 3's prompting guide recommends a short duration; its assistant
+  suggests 1–3 s for impacts and 3–6 s for actions.
+- Stable Audio 3: its [prompting guide](https://github.com/Stability-AI/stable-audio-3/blob/main/docs/guides/prompting.md)
+  also asks for the recording and processing (mic placement, room, effects), and lists a
+  `TrackType: SFX` prefix as a tag that "tends to produce more semantically reasonable sound effects".
+  That tag comes from a music library's metadata; the guide does not say whether it helps the sm-sfx
+  model this server runs, so compare with and without it. `negative_prompt` has no effect by default
+  (see above).
+- MOSS-SoundEffect v2.0 was trained on English and Chinese captions; its examples are full sentences
+  ("The crisp, rhythmic click-clack of fast typing on a mechanical keyboard."). This server accepts
+  English prompts.
