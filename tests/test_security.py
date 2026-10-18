@@ -210,7 +210,8 @@ def test_float_wav_is_refused(tmp_path: Path) -> None:
     except AudioError:
         return  # Python < 3.15: the wave module cannot read float WAV at all
     # Python 3.15+ reads it; the delivery check still refuses anything but 16-bit PCM
-    assert wav_problem(info) == "output is 32-bit, expected 16-bit PCM"
+    problem = wav_problem(info, sample_rate=48000, channels=2)
+    assert problem == "output is 32-bit, expected 16-bit PCM"
 
 
 # -- config file ----------------------------------------------------------------------------
