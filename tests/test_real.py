@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -13,13 +14,12 @@ from sfx_api.audio import inspect_wav, wav_problem
 from sfx_api.backends import build_backend
 from sfx_api.settings import load_settings
 from sfx_api.workflows import build_registry, workflow_engine
-from sfx_api.workflows.base import Workflow
+from sfx_api.workflows.base import Workflow, WorkflowOutput
 
 pytestmark = pytest.mark.real
 
 
-@pytest.mark.parametrize("workflow_id", ["stable-audio-3-sfx", "moss-sfx-v2"])
-def test_a_real_clip(tmp_path: Path, workflow_id: str) -> None:
+def run(tmp_path: Path, workflow_id: str, params: dict[str, Any]) -> WorkflowOutput:
     settings = load_settings().with_overrides(data_dir=tmp_path / "data")
     backend = build_backend(settings)
     registry = build_registry(backend)
@@ -30,17 +30,30 @@ def test_a_real_clip(tmp_path: Path, workflow_id: str) -> None:
     status = backend.engine_status(engine)
     if not status.available:
         pytest.skip(f"{workflow_id}: {status.reason}")
-    params = workflow.params_model.model_validate(
-        {"prompt": "single wooden knock, short", "duration_sec": 1.5, "seed": 5, "count": 2}
-    )
-    stored = workflow.store_inputs(params, tmp_path)
+    stored = workflow.store_inputs(workflow.params_model.model_validate(params), tmp_path)
     request = workflow.build_request("job_real", stored, tmp_path)
     try:
         raw = backend.generate(request, tmp_path, timeout_s=1800, cancel=threading.Event())
         assert raw.ok, raw.describe_failure()
-        output = workflow.finalize("job_real", stored, tmp_path, raw)
+        return workflow.finalize("job_real", stored, tmp_path, raw)
     finally:
         backend.shutdown()
+
+
+def assert_in_range(output: WorkflowOutput) -> None:
+    """A clip that left [-1, 1] many times over is broadband noise once it is turned down. Loud
+    pops legitimately peak near 1.8 (-6 dB); the broken clips needed -20 to -32 dB."""
+    clips = output.result["details"]["generation"]["engine"]["clips"]
+    assert all(c["gain_db"] > -12 for c in clips), clips
+
+
+@pytest.mark.parametrize("workflow_id", ["stable-audio-3-sfx", "moss-sfx-v2"])
+def test_a_real_clip(tmp_path: Path, workflow_id: str) -> None:
+    output = run(
+        tmp_path,
+        workflow_id,
+        {"prompt": "single wooden knock, short", "duration_sec": 1.5, "seed": 5, "count": 2},
+    )
     for index, path in enumerate(output.files):
         info = inspect_wav(path)
         rate = output.result["outputs"][index]["sample_rate"]
@@ -48,3 +61,14 @@ def test_a_real_clip(tmp_path: Path, workflow_id: str) -> None:
         assert wav_problem(info, sample_rate=rate, channels=channels) is None
         assert info.seconds == pytest.approx(1.5, abs=0.05)
     assert [o["seed_used"] for o in output.result["outputs"]] == [5, 7]
+    assert_in_range(output)
+
+
+def test_sa3_fractional_length(tmp_path: Path) -> None:
+    """Conditioned on 0.7 s itself, this prompt and seed peaked at 37 (gain -32 dB)."""
+    prompt = "Short mechanical gear shift clunk of a metal shifter, close and dry."
+    output = run(
+        tmp_path, "stable-audio-3-sfx", {"prompt": prompt, "duration_sec": 0.7, "seed": 21}
+    )
+    assert inspect_wav(output.files[0]).seconds == pytest.approx(0.7, abs=0.01)
+    assert_in_range(output)

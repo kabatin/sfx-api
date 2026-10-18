@@ -202,6 +202,13 @@ def test_sa3_health(tmp_path: Path) -> None:
     assert other.unavailable_reason() == "the Stable Audio 3 MLX checkout is missing"
 
 
+def test_sa3_conditions_on_whole_seconds() -> None:
+    from sfx_api.workers.sa3_worker import conditioning_seconds
+
+    cases = {0.5: 1, 0.7: 1, 0.93: 1, 1.0: 1, 1.4: 2, 2.0: 2, 2.8: 3, 3.8: 4, 9.99: 10, 10.0: 10}
+    assert {s: conditioning_seconds(s, 44100) for s in cases} == cases
+
+
 def test_sa3_estimates(tmp_path: Path) -> None:
     backend = Sa3Backend(Sa3Options(mlx_dir=sa3_checkout(tmp_path)), state_dir=tmp_path)
     assert backend.typical_seconds(10.0) == pytest.approx(1.0 + 0.5)

@@ -220,13 +220,18 @@ it that did not succeed, and on shutdown.
 
 Both: peaks are kept under −1 dBFS before the clip is written as 16-bit PCM. A clip whose peak is
 higher is turned down as a whole (no limiter, so the attack of an impact keeps its shape); quieter
-clips are left exactly as the engine made them.
+clips are left exactly as the engine made them. The gain is `gain_db` in
+`result.details.generation.engine.clips[]`; a few dB is normal for loud sounds, while −20 dB or lower
+means the engine's output went far past full scale and the clip is most likely noise.
 
 ### `stable-audio-3-sfx`
 
 - Stable Audio 3 sm-sfx (the sound-effects model), 8 steps, no guidance (the model is distilled for
-  that). 44.1 kHz stereo, cut to the requested length (granularity ~93 ms inside the model, then
-  trimmed to the exact sample count).
+  that). 44.1 kHz stereo.
+- The model only knows whole seconds: it was trained on lengths rounded up to the second, and its
+  demos offer 1, 2, 3 … s. Each clip is generated at the next whole second (0.7 s → 1 s, 1.4 s → 2 s)
+  and cut to the requested length. Generated at the fractional length itself, most lengths (0.9,
+  1.2, 2.8 s …) came out many times over full scale and sounded like noise, whatever the prompt.
 - `negative_prompt` is ignored by default (`applied: false`): it only acts through guidance, which
   doubles the cost and changes the distilled model's sound. The server can enable it.
 - Weights: [Stability AI Community License](https://huggingface.co/stabilityai/stable-audio-3-optimized/blob/main/LICENSE.md).

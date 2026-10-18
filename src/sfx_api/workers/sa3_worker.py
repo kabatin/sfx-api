@@ -11,6 +11,9 @@ Facts measured on the target Mac (M5, 32 GB, sm-sfx, 8 steps): models load in ~0
 first clip takes ~2.6 s (kernel compilation), later clips 0.37 s (2 s) to 0.53 s (10 s); one
 loaded DiT serves every length (bit-identical to a DiT loaded for that length); the same seed
 gives the same clip.
+
+The model only knows whole seconds (see :func:`conditioning_seconds`): a clip is generated at the
+next whole second and cut to the requested length.
 """
 
 from __future__ import annotations
@@ -35,6 +38,17 @@ DECODER_NAME = "same-s"
 T5_MAX_TOKENS = 256
 # a load-time shape only (one loaded DiT serves every length)
 LOAD_SECONDS = 10.0
+
+
+def conditioning_seconds(seconds: float, sample_rate: int) -> int:
+    """The whole-second length a ``seconds`` clip is conditioned on and generated at.
+
+    Training conditions on ``ceil(n_samples / sample_rate)`` and both official demos offer whole
+    seconds from 1. Fractional values are outside that: conditioned on 0.7, 0.9, 1.1-1.3, 1.7,
+    1.9, 2.3, 2.8 or 3.8 s, every clip (3 prompts x 3 seeds) peaked at 8-40 and was noise;
+    whole seconds 1-12 (7 prompts x 6 seeds, 504 clips) peaked at 1.8 at most.
+    """
+    return max(1, math.ceil(round(seconds * sample_rate) / sample_rate))
 
 
 class Engine:
@@ -95,8 +109,9 @@ class Engine:
         import numpy as np  # pyright: ignore[reportMissingImports]
 
         mx = self.mx
-        t_lat = max(1, math.ceil(seconds * self.sample_rate / self.samples_per_latent))
-        seconds_embed = self.secs_embedder(seconds).astype(mx.float16)
+        whole = conditioning_seconds(seconds, self.sample_rate)
+        t_lat = math.ceil(whole * self.sample_rate / self.samples_per_latent)
+        seconds_embed = self.secs_embedder(float(whole)).astype(mx.float16)
         cross = self._embed(prompt, seconds_embed)
         global_cond = seconds_embed[:, 0, :]
         cfg = self.negative_cfg if negative and self.negative_cfg > 1.0 else 1.0

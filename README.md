@@ -306,9 +306,16 @@ stand-in worker.
 The clips were checked by measurement (length, level, loudness per second, spectrum), not by
 listening.
 
+Stable Audio 3 at fractional lengths (found by the first client, 2026-10-18): most lengths that are
+not whole seconds (0.7, 0.9, 1.2, 2.8 s …) came out 8–40 times over full scale and sounded like
+noise, for every prompt and seed tried; the official MLX script gives the same numbers. Clips are
+now generated at the next whole second and cut (see the worker's `conditioning_seconds`). Checked
+afterwards: 504 whole-second clips (1–12 s, 7 prompts, 6 seeds) peak at 1.8 at most, and the
+client's 36 requests (0.7–8 s) replayed peak under 1.0. A second machine on the LAN has run jobs
+with the token.
+
 Not checked: cancelling a job on a real engine, `count` 3–4 in one job, Stable Audio 3 with
-`negative_prompt_cfg` > 1 through the server (measured outside it), MOSS on `device = "cpu"`,
-access from another machine with a token.
+`negative_prompt_cfg` > 1 through the server (measured outside it), MOSS on `device = "cpu"`.
 
 ## Development
 
