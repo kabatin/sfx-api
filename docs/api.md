@@ -275,7 +275,7 @@ means the engine's output went far past full scale and the clip is most likely n
 - `negative_prompt` is ignored by default (`applied: false`), as with the other Stable Audio 3
   workflows. The same seed and prompt give the same track.
 - About 3.4 s for a 32 s track, 5.3 s for 62 s, 10.3 s for 120 s and 15.8 s for 190 s once loaded
-  (M5 32 GB). Peak memory ~11 GB for a 62 s track and up to ~14 GB for the longest.
+  (M5 32 GB). Peak memory ~11 GB, also for a 190 s track through the server.
 - In a blind listening test on four instrumental briefs (a trailer cue, an anime-opening style
   track, lo-fi piano, lofi hip hop) against ACE-Step 1.5 turbo, it was picked for three; ACE-Step
   won the lo-fi piano.

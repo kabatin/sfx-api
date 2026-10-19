@@ -52,7 +52,7 @@ four briefs; it makes no vocals.
 ## Requirements
 
 - Apple Silicon Mac, macOS 14+. 32 GB of memory recommended (Stable Audio 3 peaks at ~11 GB with
-  medium, up to ~14 GB for long music, and ~4 GB with sm-sfx; MOSS at ~22 GB).
+  medium, sound effects or music, and ~4 GB with sm-sfx; MOSS at ~22 GB).
 - Python 3.12+ and [uv](https://docs.astral.sh/uv/) for sfx-api itself.
 - Either engine, or both, each in its own environment (sfx-api runs it as a separate worker process;
   the environments never mix):
@@ -100,7 +100,8 @@ one track each, with the worker's code outside the server, models loaded:
 |---|---|---|---|---|---|---|---|
 | seconds | 2.2 | 2.6 | 3.4 | 5.3 | 10.3 | 15.8 | 32.8 |
 
-Peak memory 11 GB with tracks up to 62 s and 14 GB in the run that included 380 s. Every length kept
+Peak memory 11 GB with tracks up to 62 s, 14 GB in the run that included 380 s, and 11 GB for a 190 s
+track through the server (the worker sampled every 0.5 s). Every length kept
 in range (raw peak 1.0–1.65) and had sound until its last second or two; the level of the last 30 s
 was within 4 dB of the whole track. The workflow stops at 190 s, the longest length Stability AI's
 paper evaluated; 380 s (the model's own limit) measured as cleanly but was not listened to.
@@ -364,7 +365,9 @@ Music (2026-10-19): the user compared four instrumental briefs in a blind listen
 trailer cue, a 32 s anime-opening style track, 20 s lo-fi piano, 15 s lofi hip hop), each with the
 same number of tracks from ACE-Step 1.5 turbo (ace-step-api) and from Stable Audio 3 medium with the
 music tag, loudness-matched for playback. Stable Audio 3 medium was picked for three; ACE-Step for the
-lo-fi piano.
+lo-fi piano. Through the running server, a 190 s track (`count` 1) took 17.7 s including a 1.4 s
+load, came back as a 190.0 s 44.1 kHz stereo WAV with the tag in `prompt_used`, and was turned down
+1.8 dB to the ceiling.
 
 Not checked: cancelling a job on a real engine, `count` 3–4 in one job, Stable Audio 3 with
 `negative_prompt_cfg` > 1 through the server (measured outside it), MOSS on `device = "cpu"`.
