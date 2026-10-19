@@ -12,6 +12,7 @@ Facts this module relies on (measured on the target Mac, M5 32 GB, README "Measu
   It breaks at fractional lengths, so the worker generates whole seconds and cuts;
 - medium: models load in ~1 s (files in the OS cache); a clip takes 1.1 s (1-2 s) to 1.7 s
   (10 s) once loaded; peak footprint ~11 GB. Fractional lengths are fine (72 clips checked).
+  Music: 10.3 s for 120 s, 15.8 s for 190 s, 32.8 s for 380 s; up to ~14 GB for the longest.
 """
 
 from __future__ import annotations

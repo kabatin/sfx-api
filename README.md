@@ -1,11 +1,12 @@
 # sfx-api
 
-**Make sound effects on your Apple Silicon Mac, as an HTTP job API.**
+**Make sound effects (and instrumental music) on your Apple Silicon Mac, as an HTTP job API.**
 
 `sfx-api` is a small, safe job server around two text-to-sound-effect engines:
 [Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) (its medium and sm-sfx models,
 Stability AI's own MLX build) and [MOSS-SoundEffect v2.0](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0)
-(PyTorch on the Mac's GPU). Send an English description, a length and a count, get back 1–4 WAV clips:
+(PyTorch on the Mac's GPU), plus instrumental music from the same Stable Audio 3 medium engine. Send
+an English description, a length and a count, get back 1–4 WAV clips:
 
 ```
 POST /v1/workflows/stable-audio-3-medium-sfx/jobs  → 202 {id}
@@ -21,14 +22,17 @@ needs only a different workflow id, body and output type. The full contract is [
 | workflow | engine | output | speed (loaded, per clip) |
 |---|---|---|---|
 | `stable-audio-3-medium-sfx` | Stable Audio 3 medium, MLX, prompt tagged `TrackType: SFX` | 44.1 kHz stereo | **1.1–1.7 s** for 1–10 s of sound |
+| `stable-audio-3-medium-music` | the same medium engine, prompt tagged `TrackType: Music, VocalType: Instrumental`; up to 190 s | 44.1 kHz stereo | **3.4–15.8 s** for 32–190 s of music |
 | `stable-audio-3-sfx` | Stable Audio 3 sm-sfx, MLX | 44.1 kHz stereo | **0.4–0.6 s** for 2–10 s of sound |
 | `moss-sfx-v2` | MOSS-SoundEffect v2.0, PyTorch MPS | 48 kHz mono | ~90 s whatever the length |
 
 Use `stable-audio-3-medium-sfx`. In a blind listening test on the nine sounds of a car-chase trailer
-(four setups, two seeds each), its sound was picked for eight; for the ninth no setup fitted.
+(four setups, two seeds each), its sound was picked for eight; for the ninth no setup fitted. For
+instrumental background music, `stable-audio-3-medium-music` was picked over ACE-Step 1.5 for three of
+four briefs; it makes no vocals.
 
-- **Closed workflows.** Clients send `prompt`, `negative_prompt`, `duration_sec` (0.5–10), a seed and a
-  count — never model names, steps, guidance or paths.
+- **Closed workflows.** Clients send `prompt`, `negative_prompt`, `duration_sec` (0.5–10; up to 190
+  for music), a seed and a count — never model names, steps, guidance or paths.
 - **Checked output.** Every clip is a 16-bit PCM WAV with the workflow's rate and channels, peaks
   under −1 dBFS, read back before the job succeeds; the result reports each clip's real length.
 - **Honest availability.** `/v1/health` says per workflow whether its engine is installed and whether
@@ -48,7 +52,7 @@ Use `stable-audio-3-medium-sfx`. In a blind listening test on the nine sounds of
 ## Requirements
 
 - Apple Silicon Mac, macOS 14+. 32 GB of memory recommended (Stable Audio 3 peaks at ~11 GB with
-  medium and ~4 GB with sm-sfx, MOSS at ~22 GB).
+  medium, up to ~14 GB for long music, and ~4 GB with sm-sfx; MOSS at ~22 GB).
 - Python 3.12+ and [uv](https://docs.astral.sh/uv/) for sfx-api itself.
 - Either engine, or both, each in its own environment (sfx-api runs it as a separate worker process;
   the environments never mix):
@@ -88,6 +92,18 @@ memory 11 GB. Unlike sm-sfx, medium is fine at fractional lengths: 92 clips at 0
 2–3 seeds) peaked at 1.7 at most, so it makes the requested length itself. Through the running
 server, `count: 1` jobs with the same prompt and seed gave the same clips bit for bit (5 clips of
 2–3 s).
+
+**Stable Audio 3 medium, music** (the same engine with `TrackType: Music, VocalType: Instrumental, `),
+one track each, with the worker's code outside the server, models loaded:
+
+| | 15 s | 20 s | 32 s | 62 s | 120 s | 190 s | 380 s |
+|---|---|---|---|---|---|---|---|
+| seconds | 2.2 | 2.6 | 3.4 | 5.3 | 10.3 | 15.8 | 32.8 |
+
+Peak memory 11 GB with tracks up to 62 s and 14 GB in the run that included 380 s. Every length kept
+in range (raw peak 1.0–1.65) and had sound until its last second or two; the level of the last 30 s
+was within 4 dB of the whole track. The workflow stops at 190 s, the longest length Stability AI's
+paper evaluated; 380 s (the model's own limit) measured as cleanly but was not listened to.
 
 **MOSS-SoundEffect v2.0** (cfg 4, PyTorch 2.9.1 on MPS), seconds per clip with the models loaded and
 the GPU otherwise idle:
@@ -343,6 +359,12 @@ ninth (an exhaust backfire) none fitted. A second round on the backfire (eight w
 the tag) found a usable clip for seven of them, so the wording was the problem, not the length. The
 real-engine tests ran medium through the backend (exact 1.4 s, the tag sent) with a config that has
 `[backends.sa3-medium]`.
+
+Music (2026-10-19): the user compared four instrumental briefs in a blind listening test (a 62 s
+trailer cue, a 32 s anime-opening style track, 20 s lo-fi piano, 15 s lofi hip hop), each with the
+same number of tracks from ACE-Step 1.5 turbo (ace-step-api) and from Stable Audio 3 medium with the
+music tag, loudness-matched for playback. Stable Audio 3 medium was picked for three; ACE-Step for the
+lo-fi piano.
 
 Not checked: cancelling a job on a real engine, `count` 3–4 in one job, Stable Audio 3 with
 `negative_prompt_cfg` > 1 through the server (measured outside it), MOSS on `device = "cpu"`.

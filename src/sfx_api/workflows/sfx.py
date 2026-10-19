@@ -100,6 +100,10 @@ class SfxWorkflow(Workflow):
     prompt_prefix: ClassVar[str] = ""
     output_media_type = OUTPUT_MEDIA_TYPE
     params_model = SfxParams
+    # the limits params_model enforces, shown in capabilities
+    max_prompt_chars: ClassVar[int] = MAX_PROMPT_CHARS
+    max_duration_s: ClassVar[float] = MAX_DURATION_S
+    default_duration_s: ClassVar[float] = DEFAULT_DURATION_S
 
     def __init__(self, *, typical_seconds_2s: float, uses_negative_prompt: bool) -> None:
         self.typical_seconds_2s = typical_seconds_2s
@@ -191,7 +195,7 @@ class SfxWorkflow(Workflow):
                 "sample_format": "pcm_s16le",
             },
             "prompt": {
-                "max_chars": MAX_PROMPT_CHARS,
+                "max_chars": self.max_prompt_chars,
                 "language": "en",
                 **({"prefix": self.prompt_prefix} if self.prompt_prefix else {}),
             },
@@ -202,8 +206,8 @@ class SfxWorkflow(Workflow):
             },
             "duration_sec": {
                 "min": MIN_DURATION_S,
-                "max": MAX_DURATION_S,
-                "default": DEFAULT_DURATION_S,
+                "max": self.max_duration_s,
+                "default": self.default_duration_s,
             },
             "count": {"min": 1, "max": MAX_COUNT},
             "seed": {"min": 0, "max": MAX_SEED, "per_clip": "seed + 2i"},

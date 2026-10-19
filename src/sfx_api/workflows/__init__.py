@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sfx_api.backends.router import EngineRouter
 from sfx_api.workflows.base import Workflow, WorkflowRegistry
+from sfx_api.workflows.music import StableAudio3MusicWorkflow
 from sfx_api.workflows.sfx import (
     MossWorkflow,
     SfxWorkflow,
@@ -16,6 +17,7 @@ def build_registry(backend: EngineRouter) -> WorkflowRegistry:
     kinds: list[type[SfxWorkflow]] = [
         StableAudio3Workflow,
         StableAudio3MediumWorkflow,
+        StableAudio3MusicWorkflow,
         MossWorkflow,
     ]
     workflows: list[Workflow] = [

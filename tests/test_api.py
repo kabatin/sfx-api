@@ -9,13 +9,15 @@ from sfx_api.api.app import create_app
 from sfx_api.backends.base import EngineStatus
 from sfx_api.jobs.queue import JobQueue
 from sfx_api.jobs.store import JobStore
-from sfx_api.workflows.base import WorkflowRegistry
+from sfx_api.workflows.base import Workflow, WorkflowRegistry
+from sfx_api.workflows.music import StableAudio3MusicWorkflow
 from sfx_api.workflows.sfx import MossWorkflow, StableAudio3Workflow
 from tests.fakes import EchoWorkflow, FakeSoundBackend
 
 TOKEN = "test-token-0123456789-abcdefghijklmnop"
 SFX = "/v1/workflows/stable-audio-3-sfx/jobs"
 MOSS = "/v1/workflows/moss-sfx-v2/jobs"
+MUSIC = "/v1/workflows/stable-audio-3-medium-music/jobs"
 
 
 def make_client(
@@ -24,12 +26,14 @@ def make_client(
     token: str | None = None,
     max_body: int = 1 << 20,
     waits_for: list[str] | None = None,
+    extra_workflows: tuple[Workflow, ...] = (),
 ) -> TestClient:
     registry = WorkflowRegistry(
         [
             EchoWorkflow(),
             StableAudio3Workflow(typical_seconds_2s=1.1, uses_negative_prompt=False),
             MossWorkflow(typical_seconds_2s=60.0, uses_negative_prompt=True),
+            *extra_workflows,
         ]
     )
     queue = JobQueue(
@@ -274,6 +278,26 @@ def test_request_validation(client: TestClient, body: dict) -> None:
 )
 def test_bounds_are_accepted(client: TestClient, body: dict) -> None:
     assert client.post(SFX, json=body).status_code == 202
+
+
+@pytest.mark.parametrize(
+    ("route", "body", "status"),
+    [
+        (MUSIC, {"prompt": "lo-fi piano, calm", "duration_sec": 190}, 202),
+        (MUSIC, {"prompt": "x" * 1000}, 202),
+        (MUSIC, {"prompt": "x", "duration_sec": 190.01}, 422),
+        (MUSIC, {"prompt": "x" * 1001}, 422),
+        (SFX, {"prompt": "x", "duration_sec": 10.01}, 422),
+        (SFX, {"prompt": "x" * 501}, 422),
+    ],
+)
+def test_each_workflow_validates_with_its_own_limits(
+    tmp_path: Path, backend: FakeSoundBackend, route: str, body: dict, status: int
+) -> None:
+    music = StableAudio3MusicWorkflow(typical_seconds_2s=1.2, uses_negative_prompt=False)
+    with make_client(tmp_path, backend, extra_workflows=(music,)) as client:
+        assert client.post(route, json=body).status_code == status
+    backend.release.set()
 
 
 def test_busy_returns_429_with_retry_after(client: TestClient, backend: FakeSoundBackend) -> None:

@@ -87,3 +87,15 @@ def test_sa3_medium_sends_the_sfx_tag(tmp_path: Path) -> None:
     assert generation["prompt_used"].startswith("TrackType: SFX, Car speeding past")
     assert inspect_wav(output.files[0]).seconds == pytest.approx(1.4, abs=0.01)
     assert_in_range(output)
+
+
+def test_sa3_medium_music_runs_past_the_sound_effect_limit(tmp_path: Path) -> None:
+    output = run(
+        tmp_path,
+        "stable-audio-3-medium-music",
+        {"prompt": "lofi hip hop, mellow piano, 80 BPM", "duration_sec": 12.5, "seed": 203},
+    )
+    generation = output.result["details"]["generation"]
+    assert generation["prompt_used"].startswith("TrackType: Music, VocalType: Instrumental, lofi")
+    assert inspect_wav(output.files[0]).seconds == pytest.approx(12.5, abs=0.01)
+    assert_in_range(output)

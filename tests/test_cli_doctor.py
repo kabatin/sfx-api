@@ -134,7 +134,8 @@ def test_smoke_runs_a_short_job(settings: Settings, healthy: None) -> None:
     assert smoke.level is Level.OK and "0.5 s WAV, 44100 Hz, 2 ch" in smoke.detail
     assert "0.5 s WAV, 48000 Hz, 1 ch" in checks["smoke moss-sfx-v2"].detail
     assert "0.5 s WAV, 44100 Hz, 2 ch" in checks["smoke stable-audio-3-medium-sfx"].detail
-    assert [call.engine for call in backend.calls] == ["sa3", "sa3-medium", "moss"]
+    assert "0.5 s WAV, 44100 Hz, 2 ch" in checks["smoke stable-audio-3-medium-music"].detail
+    assert [call.engine for call in backend.calls] == ["sa3", "sa3-medium", "sa3-medium", "moss"]
     assert backend.calls[0].duration_s == 1.0 and backend.calls[0].count == 1
     assert not any((settings.data_dir / "smoke").iterdir())
 
@@ -163,7 +164,7 @@ def test_smoke_skips_only_the_unavailable_engine(settings: Settings, healthy: No
     checks = by_name(run_doctor(settings, backend, build_registry(backend), smoke=True))
     assert checks["smoke stable-audio-3-sfx"].level is Level.OK
     assert "smoke moss-sfx-v2" not in checks
-    assert [c.engine for c in backend.calls] == ["sa3", "sa3-medium"]
+    assert [c.engine for c in backend.calls] == ["sa3", "sa3-medium", "sa3-medium"]
 
 
 # -- CLI -------------------------------------------------------------------------------

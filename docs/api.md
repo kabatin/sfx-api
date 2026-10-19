@@ -7,11 +7,12 @@ and [vpipe-api](https://github.com/kabatin/vpipe-api) (same job lifecycle, error
 `429` + `Retry-After`, `Idempotency-Key`), so a client that drives them needs only a different
 workflow id, body and output type.
 
-Three workflows, one per engine:
+Four workflows on three engines: three for sound effects and one for instrumental music.
 
 | workflow | engine | output |
 |---|---|---|
 | `stable-audio-3-medium-sfx` (recommended) | [Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) medium, Stability AI's MLX build; the server tags the prompt `TrackType: SFX` | WAV, 16-bit, 44.1 kHz, stereo |
+| `stable-audio-3-medium-music` | the same Stable Audio 3 medium engine; the server tags the prompt `TrackType: Music, VocalType: Instrumental` | WAV, 16-bit, 44.1 kHz, stereo, up to 190 s |
 | `stable-audio-3-sfx` | [Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) sm-sfx, Stability AI's MLX build | WAV, 16-bit, 44.1 kHz, stereo |
 | `moss-sfx-v2` | [MOSS-SoundEffect v2.0](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0), PyTorch on MPS | WAV, 16-bit, 48 kHz, mono |
 
@@ -96,6 +97,11 @@ descriptors** — a client must not assume values that are not listed here.
     "id": "stable-audio-3-medium-sfx",
     "prompt": { "max_chars": 500, "language": "en", "prefix": "TrackType: SFX, " },
     "…": "…"
+  }, {
+    "id": "stable-audio-3-medium-music",
+    "prompt": { "max_chars": 1000, "language": "en", "prefix": "TrackType: Music, VocalType: Instrumental, " },
+    "duration_sec": { "min": 0.5, "max": 190.0, "default": 30.0 },
+    "…": "…"
   }, { "id": "moss-sfx-v2", "…": "…" }],
   "coordination": { "waits_for": ["vpipe-api", "klein-api", "ace-step-api"] }
 }
@@ -104,6 +110,7 @@ descriptors** — a client must not assume values that are not listed here.
 `typical_seconds` is per 2-second clip with the models already loaded, and only a hint.
 `negative_prompt.applied` says whether that workflow's engine uses the negative prompt at all.
 `prompt.prefix`, when present, is put in front of the prompt by the server (see the workflow).
+`prompt.max_chars` and `duration_sec` differ per workflow (the music workflow takes longer ones).
 
 ### `GET /v1/workflows`
 
@@ -111,7 +118,8 @@ Lists workflows with the JSON Schema of their POST body (`params_schema`).
 
 ### `POST /v1/workflows/{workflow}/jobs`
 
-`{workflow}` is `stable-audio-3-medium-sfx`, `stable-audio-3-sfx` or `moss-sfx-v2`; all take the same body,
+`{workflow}` is `stable-audio-3-medium-sfx`, `stable-audio-3-medium-music`, `stable-audio-3-sfx` or
+`moss-sfx-v2`; all take the same body (the music workflow allows a longer prompt and length),
 `Content-Type: application/json`. Optional header `Idempotency-Key: <1–128 of [A-Za-z0-9._:-]>`.
 
 ```json
@@ -121,9 +129,9 @@ Lists workflows with the JSON Schema of their POST body (`params_schema`).
 
 | field | type | default | notes |
 |---|---|---|---|
-| `prompt` | string, 1–500 chars | — | English description of the sound. No control characters (tab/newline are fine). |
+| `prompt` | string, 1–500 chars (1–1000 for `stable-audio-3-medium-music`) | — | English description of the sound. No control characters (tab/newline are fine). |
 | `negative_prompt` | string, 0–500 chars | `""` | What the sound should not contain. Used by `moss-sfx-v2`; the Stable Audio 3 workflows accept it and ignore it unless the server enables guidance for them (`capabilities` → `negative_prompt.applied`). |
-| `duration_sec` | number 0.5–10 | `2.0` | Requested length. The real length of each clip is reported in the result. |
+| `duration_sec` | number 0.5–10 (0.5–190 for the music workflow) | `2.0` (`30.0` for music) | Requested length. The real length of each clip is reported in the result. |
 | `seed` | int 0 … 2³²−1 \| null | random | Clip *i* (0-based) uses **`seed + 2·i`**; `seed + 2·(count − 1)` must not exceed 2³²−1. |
 | `count` | int 1–4 | `1` | Number of clips. They run one after another inside the one job. |
 
@@ -250,6 +258,29 @@ means the engine's output went far past full scale and the clip is most likely n
   without the tag.
 - Weights: [Stability AI Community License](https://huggingface.co/stabilityai/stable-audio-3-optimized/blob/main/LICENSE.md).
 
+### `stable-audio-3-medium-music`
+
+- Instrumental music from the same Stable Audio 3 medium engine (8 steps, no guidance), so it loads
+  no other model; music and `stable-audio-3-medium-sfx` jobs share one queue, and a long music job
+  (up to 4 × 190 s) holds it for a while before the next sound effect starts. 44.1 kHz stereo.
+- The server puts `TrackType: Music, VocalType: Instrumental, ` in front of the prompt, the tag
+  Stable Audio 3's prompting guide recommends for instrumental music; a prompt that already starts
+  with a `TrackType:` tag is sent as it is (so a prompt with its own tag also replaces the
+  `VocalType: Instrumental` part). The model makes no intelligible vocals or lyrics either way; use
+  [ace-step-api](https://github.com/kabatin/ace-step-api) for songs.
+- `prompt` up to 1000 characters. The text encoder reads the first 256 tokens of the tagged prompt;
+  a 741-character trailer brief came to 174.
+- `duration_sec` 0.5–190 (default 30). 190 s is the longest length Stability AI evaluated in its
+  paper; the model's own interface goes to 380 s.
+- `negative_prompt` is ignored by default (`applied: false`), as with the other Stable Audio 3
+  workflows. The same seed and prompt give the same track.
+- About 3.4 s for a 32 s track, 5.3 s for 62 s, 10.3 s for 120 s and 15.8 s for 190 s once loaded
+  (M5 32 GB). Peak memory ~11 GB for a 62 s track and up to ~14 GB for the longest.
+- In a blind listening test on four instrumental briefs (a trailer cue, an anime-opening style
+  track, lo-fi piano, lofi hip hop) against ACE-Step 1.5 turbo, it was picked for three; ACE-Step
+  won the lo-fi piano.
+- Weights: [Stability AI Community License](https://huggingface.co/stabilityai/stable-audio-3-optimized/blob/main/LICENSE.md).
+
 ### `stable-audio-3-sfx`
 
 - Stable Audio 3 sm-sfx (the sound-effects model), 8 steps, no guidance (the model is distilled for
@@ -293,6 +324,10 @@ The prompt is what shapes the sound; `seed` only picks a variation of it. Change
   `TrackType: SFX` prefix as a tag that "tends to produce more semantically reasonable sound effects".
   `stable-audio-3-medium-sfx` adds it for you; `stable-audio-3-sfx` sends the prompt as it is.
   `negative_prompt` has no effect by default (see above).
+- Music (`stable-audio-3-medium-music`): describe the genre, instruments, mood, tempo (BPM) and
+  how the track develops, as Stable Audio 3's prompting guide does for music ("lo-fi piano, calm",
+  "anime opening, j-pop instrumental, cinematic orchestral pop, 128 bpm, …"). Sections can be placed
+  in time ("a breakdown at around 38 seconds"); whether the model keeps to them is not checked.
 - MOSS-SoundEffect v2.0 was trained on English and Chinese captions; its examples are full sentences
   ("The crisp, rhythmic click-clack of fast typing on a mechanical keyboard."). This server accepts
   English prompts.

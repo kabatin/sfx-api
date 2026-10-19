@@ -9,10 +9,14 @@ First version, built on the job server of [ace-step-api](https://github.com/kaba
   Schemas, typed submit routes, job status with progress over all clips, queue position,
   `waiting_for`, estimate and timings, per-index WAV download, cancel. One error envelope;
   `503 workflow_unavailable` for a workflow whose engine is missing.
-- Workflows `stable-audio-3-sfx` (Stable Audio 3 sm-sfx, Stability AI's MLX build; 44.1 kHz stereo)
-  and `moss-sfx-v2` (MOSS-SoundEffect v2.0, PyTorch on MPS; 48 kHz mono): `prompt`,
-  `negative_prompt`, `duration_sec` 0.5–10, `count` 1–4, `seed` (clip *i* uses `seed + 2i`); every clip
-  read back as 16-bit PCM WAV before the job succeeds.
+- Workflows `stable-audio-3-medium-sfx` (Stable Audio 3 medium, prompt tagged `TrackType: SFX`),
+  `stable-audio-3-sfx` (Stable Audio 3 sm-sfx, generated at whole seconds and cut), both Stability
+  AI's MLX build at 44.1 kHz stereo, and `moss-sfx-v2` (MOSS-SoundEffect v2.0, PyTorch on MPS; 48 kHz
+  mono): `prompt` (500 chars), `negative_prompt`, `duration_sec` 0.5–10, `count` 1–4, `seed` (clip *i*
+  uses `seed + 2i`); every clip read back as 16-bit PCM WAV before the job succeeds.
+- Workflow `stable-audio-3-medium-music`: instrumental music from the same medium engine, prompt
+  tagged `TrackType: Music, VocalType: Instrumental`, `prompt` up to 1000 chars, `duration_sec`
+  0.5–190 (default 30).
 - One resident worker per engine in that engine's own Python (`-P`, own process group, requests on
   stdin, replies on a private pipe, offline), released when idle, when a coordinated server is busy,
   after failed jobs and on shutdown. The server starts when at least one engine is available.

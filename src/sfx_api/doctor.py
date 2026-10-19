@@ -118,8 +118,8 @@ def check_memory() -> Check:
     return Check(
         "memory",
         level,
-        f"{free}% free (loaded engines peak at ~11 GB SA3 medium, ~4 GB SA3 sm-sfx, "
-        f"~{MOSS_PEAK_GB} GB MOSS)",
+        f"{free}% free (loaded engines peak at ~11 GB SA3 medium, ~14 GB for long music, "
+        f"~4 GB SA3 sm-sfx, ~{MOSS_PEAK_GB} GB MOSS)",
     )
 
 
