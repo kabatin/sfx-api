@@ -116,7 +116,10 @@ def check_memory() -> Check:
     free = int(match.group(1))
     level = Level.OK if free >= MIN_MEMORY_FREE_PERCENT else Level.WARN
     return Check(
-        "memory", level, f"{free}% free (loaded engines peak at ~4 GB SA3, ~{MOSS_PEAK_GB} GB MOSS)"
+        "memory",
+        level,
+        f"{free}% free (loaded engines peak at ~11 GB SA3 medium, ~4 GB SA3 sm-sfx, "
+        f"~{MOSS_PEAK_GB} GB MOSS)",
     )
 
 

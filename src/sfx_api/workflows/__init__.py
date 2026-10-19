@@ -4,19 +4,26 @@ from __future__ import annotations
 
 from sfx_api.backends.router import EngineRouter
 from sfx_api.workflows.base import Workflow, WorkflowRegistry
-from sfx_api.workflows.sfx import MossWorkflow, SfxWorkflow, StableAudio3Workflow
+from sfx_api.workflows.sfx import (
+    MossWorkflow,
+    SfxWorkflow,
+    StableAudio3MediumWorkflow,
+    StableAudio3Workflow,
+)
 
 
 def build_registry(backend: EngineRouter) -> WorkflowRegistry:
+    kinds: list[type[SfxWorkflow]] = [
+        StableAudio3Workflow,
+        StableAudio3MediumWorkflow,
+        MossWorkflow,
+    ]
     workflows: list[Workflow] = [
-        StableAudio3Workflow(
-            typical_seconds_2s=backend.typical_seconds_for(StableAudio3Workflow.engine, 2.0),
-            uses_negative_prompt=backend.uses_negative_prompt_for(StableAudio3Workflow.engine),
-        ),
-        MossWorkflow(
-            typical_seconds_2s=backend.typical_seconds_for(MossWorkflow.engine, 2.0),
-            uses_negative_prompt=backend.uses_negative_prompt_for(MossWorkflow.engine),
-        ),
+        kind(
+            typical_seconds_2s=backend.typical_seconds_for(kind.engine, 2.0),
+            uses_negative_prompt=backend.uses_negative_prompt_for(kind.engine),
+        )
+        for kind in kinds
     ]
     return WorkflowRegistry(workflows)
 

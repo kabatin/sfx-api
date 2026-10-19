@@ -26,7 +26,7 @@ from sfx_api.backends.moss import (
 )
 from sfx_api.backends.resident import WORKERS_DIR, ResidentBackend
 from sfx_api.backends.router import EngineRouter
-from sfx_api.backends.sa3 import MODEL_FILES, Sa3Backend, Sa3Options
+from sfx_api.backends.sa3 import MEDIUM, MODEL_FILES, Sa3Backend, Sa3MediumBackend, Sa3Options
 from sfx_api.checks import Check, Level
 from sfx_api.settings import SettingsError, load_settings
 
@@ -178,7 +178,10 @@ def test_sa3_worker_arguments_and_env(tmp_path: Path) -> None:
     config = backend.engine.config
     assert config.script == WORKERS_DIR / "sa3_worker.py" and config.script.is_file()
     assert config.python == root / ".venv" / "bin" / "python"
-    assert config.args == ("--mlx-dir", str(root), "--negative-cfg", "3.0")
+    assert config.args == (
+        "--mlx-dir", str(root), "--negative-cfg", "3.0",
+        "--dit", "sm-sfx", "--decoder", "same-s", "--whole-seconds",
+    )  # fmt: skip
     assert config.cwd == root and config.state_dir == tmp_path / "engine"
     assert config.env["HF_HUB_OFFLINE"] == "1" and config.env["HF_HOME"] == str(tmp_path / "hf")
     assert backend.uses_negative_prompt
@@ -200,6 +203,38 @@ def test_sa3_health(tmp_path: Path) -> None:
     assert "Python environment" in (backend.unavailable_reason() or "")
     other = Sa3Backend(Sa3Options(mlx_dir=tmp_path / "nowhere"), state_dir=tmp_path)
     assert other.unavailable_reason() == "the Stable Audio 3 MLX checkout is missing"
+
+
+def test_sa3_medium_runs_the_same_worker_with_its_own_model(tmp_path: Path) -> None:
+    root = sa3_checkout(tmp_path, MEDIUM.model_files)
+    backend = Sa3MediumBackend(Sa3Options(mlx_dir=root), state_dir=tmp_path / "engine")
+    config = backend.engine.config
+    assert backend.name == "sa3-medium" and config.name == "sa3-medium"
+    assert config.script == WORKERS_DIR / "sa3_worker.py"
+    # medium makes the requested length itself: no whole-second rounding
+    assert config.args == (
+        "--mlx-dir", str(root), "--negative-cfg", "1.0", "--dit", "medium", "--decoder", "same-l",
+    )  # fmt: skip
+    assert backend.unavailable_reason() is None
+    assert backend.health()[0].name == "Stable Audio 3 (medium)"
+    assert backend.typical_seconds(10.0) == pytest.approx(1.0 + 0.075 * 10)
+    assert backend.options.load_seconds is None and backend.load_seconds == 15.0
+    # options override the model's estimates, and 0 is a value, not "unset"
+    tuned = Sa3MediumBackend(
+        Sa3Options(
+            mlx_dir=root, load_seconds=3.0, clip_overhead_seconds=0.0, seconds_per_audio_second=0.1
+        ),
+        state_dir=tmp_path,
+    )
+    assert tuned.load_seconds == 3.0 and tuned.typical_seconds(10.0) == pytest.approx(1.0)
+    (root / "models" / "mlx" / "dit_medium_f16.npz").unlink()
+    assert backend.unavailable_reason() == "model files missing: dit_medium_f16.npz"
+    assert Sa3MediumBackend(state_dir=tmp_path).unavailable_reason() == (
+        "not configured (set mlx_dir in [backends.sa3-medium])"
+    )
+    # the small model's files do not make medium available
+    small = Sa3MediumBackend(Sa3Options(mlx_dir=sa3_checkout(tmp_path / "s")), state_dir=tmp_path)
+    assert "dit_medium_f16.npz" in (small.unavailable_reason() or "")
 
 
 def test_sa3_conditions_on_whole_seconds() -> None:
@@ -350,15 +385,19 @@ def test_loaded_is_only_reported_once_ready(
     assert not backend.engine_status("fake").loaded
 
 
-def test_build_backend_reads_both_tables(tmp_path: Path) -> None:
+def test_build_backend_reads_each_table(tmp_path: Path) -> None:
     config = tmp_path / "config.toml"
     config.write_text(
         f'data_dir = "{tmp_path / "data"}"\n'
         f'[backends.sa3]\nmlx_dir = "{tmp_path / "sa3"}"\nnegative_prompt_cfg = 3.0\n'
         f"[backends.moss]\nsteps = 50\n"
+        f'[backends.sa3-medium]\nmlx_dir = "{tmp_path / "sa3"}"\n'
     )
     router = build_backend(load_settings(config_path=config, env={}))
     sa3, moss = router.engines["sa3"], router.engines["moss"]
+    medium = router.engines["sa3-medium"]
+    assert isinstance(medium, Sa3MediumBackend) and medium.options.negative_prompt_cfg == 1.0
+    assert medium.engine.config.state_dir == tmp_path / "data" / "engine" / "sa3-medium"
     assert isinstance(sa3, Sa3Backend) and isinstance(moss, MossBackend)
     assert sa3.options.negative_prompt_cfg == 3.0 and moss.options.steps == 50
     assert sa3.engine.config.state_dir == tmp_path / "data" / "engine" / "sa3"

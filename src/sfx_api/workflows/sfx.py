@@ -1,7 +1,8 @@
 """The sound-effect workflows: an English description (and optionally what to avoid) to 1-4
 short clips, delivered as 16-bit PCM WAV.
 
-Both workflows take the same params; they differ in engine, sample rate and channels. Clip i
+All workflows take the same params; they differ in engine, sample rate, channels and the tag
+put in front of the prompt (the medium workflow sends "TrackType: SFX, " first). Clip i
 uses ``seed + 2 * i``: Stable Audio 3 draws its noise from ``seed`` and its sampler from
 ``seed + 1``, so consecutive seeds would share randomness. Sending ``seed_used`` back with
 ``count: 1`` reproduces that clip. Every clip is read back (PCM WAV, the workflow's rate and
@@ -43,7 +44,7 @@ def _text(value: str, field: str) -> str:
 
 
 class SfxParams(BaseModel):
-    """POST body for both sound-effect workflows."""
+    """POST body for every sound-effect workflow."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -95,6 +96,8 @@ class SfxWorkflow(Workflow):
     channels: ClassVar[int]
     # how the engine treats negative_prompt (shown in capabilities)
     negative_prompt_note: ClassVar[str]
+    # put in front of the client's prompt unless it already starts with a TrackType tag
+    prompt_prefix: ClassVar[str] = ""
     output_media_type = OUTPUT_MEDIA_TYPE
     params_model = SfxParams
 
@@ -109,13 +112,19 @@ class SfxWorkflow(Workflow):
             stored["seed"] = secrets.randbelow(MAX_SEED - SEED_STEP * (MAX_COUNT - 1) + 1)
         return stored
 
+    def engine_prompt(self, prompt: str) -> str:
+        """The prompt the engine is given."""
+        if not self.prompt_prefix or prompt.lower().startswith("tracktype:"):
+            return prompt
+        return self.prompt_prefix + prompt
+
     def build_request(
         self, job_id: str, params: Mapping[str, Any], job_dir: Path
     ) -> GenerationRequest:
         return GenerationRequest(
             job_id=job_id,
             engine=self.engine,
-            prompt=params["prompt"],
+            prompt=self.engine_prompt(params["prompt"]),
             negative_prompt=params.get("negative_prompt", ""),
             duration_s=float(params["duration_sec"]),
             seeds=clip_seeds(params["seed"], params["count"]),
@@ -164,6 +173,7 @@ class SfxWorkflow(Workflow):
                 "details": {
                     "generation": {
                         "requested_duration_sec": params["duration_sec"],
+                        "prompt_used": self.engine_prompt(params["prompt"]),
                         "negative_prompt_applied": bool(negative) and self.uses_negative_prompt,
                         "engine": raw.details,
                     }
@@ -180,7 +190,11 @@ class SfxWorkflow(Workflow):
                 "channels": self.channels,
                 "sample_format": "pcm_s16le",
             },
-            "prompt": {"max_chars": MAX_PROMPT_CHARS, "language": "en"},
+            "prompt": {
+                "max_chars": MAX_PROMPT_CHARS,
+                "language": "en",
+                **({"prefix": self.prompt_prefix} if self.prompt_prefix else {}),
+            },
             "negative_prompt": {
                 "max_chars": MAX_PROMPT_CHARS,
                 "applied": self.uses_negative_prompt,
@@ -216,6 +230,21 @@ class StableAudio3Workflow(SfxWorkflow):
         "accepted; used only when the server enables guidance for it "
         "(the distilled model runs without guidance by default)"
     )
+
+
+class StableAudio3MediumWorkflow(SfxWorkflow):
+    id = "stable-audio-3-medium-sfx"
+    description = (
+        "Stable Audio 3 (medium, MLX) with the TrackType: SFX tag: sound effects as 16-bit "
+        "44.1 kHz stereo WAV"
+    )
+    engine = "sa3-medium"
+    sample_rate = 44100
+    channels = 2
+    negative_prompt_note = StableAudio3Workflow.negative_prompt_note
+    # Stable Audio 3's own prompt assistant tags sound effects this way; in a blind test on a
+    # trailer's 9 sounds, medium with the tag was preferred for 8 (none fitted the 9th)
+    prompt_prefix = "TrackType: SFX, "
 
 
 class MossWorkflow(SfxWorkflow):

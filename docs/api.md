@@ -7,10 +7,11 @@ and [vpipe-api](https://github.com/kabatin/vpipe-api) (same job lifecycle, error
 `429` + `Retry-After`, `Idempotency-Key`), so a client that drives them needs only a different
 workflow id, body and output type.
 
-Two workflows, one per engine:
+Three workflows, one per engine:
 
 | workflow | engine | output |
 |---|---|---|
+| `stable-audio-3-medium-sfx` (recommended) | [Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) medium, Stability AI's MLX build; the server tags the prompt `TrackType: SFX` | WAV, 16-bit, 44.1 kHz, stereo |
 | `stable-audio-3-sfx` | [Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) sm-sfx, Stability AI's MLX build | WAV, 16-bit, 44.1 kHz, stereo |
 | `moss-sfx-v2` | [MOSS-SoundEffect v2.0](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0), PyTorch on MPS | WAV, 16-bit, 48 kHz, mono |
 
@@ -60,6 +61,7 @@ Identical to ace-step-api:
   "waiting_for_peer": 0,
   "workflows": {
     "stable-audio-3-sfx": { "available": true, "loaded": true, "reason": null },
+    "stable-audio-3-medium-sfx": { "available": true, "loaded": false, "reason": null },
     "moss-sfx-v2": { "available": true, "loaded": false, "reason": null }
   }
 }
@@ -90,6 +92,10 @@ descriptors** — a client must not assume values that are not listed here.
     "count": { "min": 1, "max": 4 },
     "seed": { "min": 0, "max": 4294967295, "per_clip": "seed + 2i" },
     "typical_seconds": { "2s_clip": 1.1 }
+  }, {
+    "id": "stable-audio-3-medium-sfx",
+    "prompt": { "max_chars": 500, "language": "en", "prefix": "TrackType: SFX, " },
+    "…": "…"
   }, { "id": "moss-sfx-v2", "…": "…" }],
   "coordination": { "waits_for": ["vpipe-api", "klein-api", "ace-step-api"] }
 }
@@ -97,6 +103,7 @@ descriptors** — a client must not assume values that are not listed here.
 
 `typical_seconds` is per 2-second clip with the models already loaded, and only a hint.
 `negative_prompt.applied` says whether that workflow's engine uses the negative prompt at all.
+`prompt.prefix`, when present, is put in front of the prompt by the server (see the workflow).
 
 ### `GET /v1/workflows`
 
@@ -104,7 +111,7 @@ Lists workflows with the JSON Schema of their POST body (`params_schema`).
 
 ### `POST /v1/workflows/{workflow}/jobs`
 
-`{workflow}` is `stable-audio-3-sfx` or `moss-sfx-v2`; both take the same body,
+`{workflow}` is `stable-audio-3-medium-sfx`, `stable-audio-3-sfx` or `moss-sfx-v2`; all take the same body,
 `Content-Type: application/json`. Optional header `Idempotency-Key: <1–128 of [A-Za-z0-9._:-]>`.
 
 ```json
@@ -115,7 +122,7 @@ Lists workflows with the JSON Schema of their POST body (`params_schema`).
 | field | type | default | notes |
 |---|---|---|---|
 | `prompt` | string, 1–500 chars | — | English description of the sound. No control characters (tab/newline are fine). |
-| `negative_prompt` | string, 0–500 chars | `""` | What the sound should not contain. Used by `moss-sfx-v2`; `stable-audio-3-sfx` accepts it and ignores it unless the server enables guidance for it (`capabilities` → `negative_prompt.applied`). |
+| `negative_prompt` | string, 0–500 chars | `""` | What the sound should not contain. Used by `moss-sfx-v2`; the Stable Audio 3 workflows accept it and ignore it unless the server enables guidance for them (`capabilities` → `negative_prompt.applied`). |
 | `duration_sec` | number 0.5–10 | `2.0` | Requested length. The real length of each clip is reported in the result. |
 | `seed` | int 0 … 2³²−1 \| null | random | Clip *i* (0-based) uses **`seed + 2·i`**; `seed + 2·(count − 1)` must not exceed 2³²−1. |
 | `count` | int 1–4 | `1` | Number of clips. They run one after another inside the one job. |
@@ -162,7 +169,9 @@ Success is `202 Accepted`:
         "channels": 2, "seed_used": 1236 }
     ],
     "seed_used": 1234,
-    "details": { "generation": { "requested_duration_sec": 2.5, "negative_prompt_applied": false,
+    "details": { "generation": { "requested_duration_sec": 2.5,
+                                 "prompt_used": "tyre screech on wet asphalt, close, short",
+                                 "negative_prompt_applied": false,
                                  "engine": { "load_seconds": 0.9, "clips": [
                                    { "index": 0, "seconds": 2.6, "gain_db": 0.0, "cfg": 1.0 },
                                    { "index": 1, "seconds": 0.4, "gain_db": -1.2, "cfg": 1.0 } ] } } }
@@ -218,17 +227,33 @@ it that did not succeed, and on shutdown.
 
 ## Workflows
 
-Both: peaks are kept under −1 dBFS before the clip is written as 16-bit PCM. A clip whose peak is
+All: peaks are kept under −1 dBFS before the clip is written as 16-bit PCM. A clip whose peak is
 higher is turned down as a whole (no limiter, so the attack of an impact keeps its shape); quieter
 clips are left exactly as the engine made them. The gain is `gain_db` in
 `result.details.generation.engine.clips[]`; a few dB is normal for loud sounds, while −20 dB or lower
 means the engine's output went far past full scale and the clip is most likely noise.
 
+### `stable-audio-3-medium-sfx` (recommended)
+
+- Stable Audio 3 medium (1.4 B), 8 steps, no guidance. 44.1 kHz stereo, the requested length made
+  directly (92 clips at fractional lengths from 0.7 to 9.5 s stayed in range, unlike sm-sfx). Same
+  params, limits and seed rule as the others.
+- The server puts `TrackType: SFX, ` in front of the prompt, as Stable Audio 3's own prompt
+  assistant does for sound effects; do not add it yourself. A prompt that already starts with a
+  `TrackType:` tag is sent as it is. `result.details.generation.prompt_used` shows what was sent,
+  and `capabilities` → `prompt.prefix` names the tag.
+- `negative_prompt` is ignored by default (`applied: false`), as with `stable-audio-3-sfx`.
+- About 1.1 s per clip for 1–2 s of sound and 1.7 s for 10 s once loaded; loading takes ~1 s
+  (longer when the files are not in the OS cache). Peak memory ~11 GB.
+- Chosen for 8 of 9 sounds of a car-chase trailer in a blind listening test against sm-sfx, with and
+  without the tag.
+- Weights: [Stability AI Community License](https://huggingface.co/stabilityai/stable-audio-3-optimized/blob/main/LICENSE.md).
+
 ### `stable-audio-3-sfx`
 
 - Stable Audio 3 sm-sfx (the sound-effects model), 8 steps, no guidance (the model is distilled for
   that). 44.1 kHz stereo.
-- The model only knows whole seconds: it was trained on lengths rounded up to the second, and its
+- sm-sfx only knows whole seconds: it was trained on lengths rounded up to the second, and its
   demos offer 1, 2, 3 … s. Each clip is generated at the next whole second (0.7 s → 1 s, 1.4 s → 2 s)
   and cut to the requested length. Generated at the fractional length itself, most lengths (0.9,
   1.2, 2.8 s …) came out many times over full scale and sounded like noise, whatever the prompt.
@@ -265,9 +290,8 @@ The prompt is what shapes the sound; `seed` only picks a variation of it. Change
 - Stable Audio 3: its [prompting guide](https://github.com/Stability-AI/stable-audio-3/blob/main/docs/guides/prompting.md)
   also asks for the recording and processing (mic placement, room, effects), and lists a
   `TrackType: SFX` prefix as a tag that "tends to produce more semantically reasonable sound effects".
-  That tag comes from a music library's metadata; the guide does not say whether it helps the sm-sfx
-  model this server runs, so compare with and without it. `negative_prompt` has no effect by default
-  (see above).
+  `stable-audio-3-medium-sfx` adds it for you; `stable-audio-3-sfx` sends the prompt as it is.
+  `negative_prompt` has no effect by default (see above).
 - MOSS-SoundEffect v2.0 was trained on English and Chinese captions; its examples are full sentences
   ("The crisp, rhythmic click-clack of fast typing on a mechanical keyboard."). This server accepts
   English prompts.

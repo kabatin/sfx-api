@@ -3,14 +3,14 @@
 **Make sound effects on your Apple Silicon Mac, as an HTTP job API.**
 
 `sfx-api` is a small, safe job server around two text-to-sound-effect engines:
-[Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) (the sm-sfx model, Stability AI's
-own MLX build) and [MOSS-SoundEffect v2.0](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0)
+[Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) (its medium and sm-sfx models,
+Stability AI's own MLX build) and [MOSS-SoundEffect v2.0](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0)
 (PyTorch on the Mac's GPU). Send an English description, a length and a count, get back 1–4 WAV clips:
 
 ```
-POST /v1/workflows/stable-audio-3-sfx/jobs   → 202 {id}
-GET  /v1/jobs/{id}                            → queued → running (progress) → succeeded
-GET  /v1/jobs/{id}/output?index=N             → audio/wav
+POST /v1/workflows/stable-audio-3-medium-sfx/jobs  → 202 {id}
+GET  /v1/jobs/{id}                                   → queued → running (progress) → succeeded
+GET  /v1/jobs/{id}/output?index=N                    → audio/wav
 ```
 
 It speaks the same job protocol as [ace-step-api](https://github.com/kabatin/ace-step-api),
@@ -20,8 +20,12 @@ needs only a different workflow id, body and output type. The full contract is [
 
 | workflow | engine | output | speed (loaded, per clip) |
 |---|---|---|---|
+| `stable-audio-3-medium-sfx` | Stable Audio 3 medium, MLX, prompt tagged `TrackType: SFX` | 44.1 kHz stereo | **1.1–1.7 s** for 1–10 s of sound |
 | `stable-audio-3-sfx` | Stable Audio 3 sm-sfx, MLX | 44.1 kHz stereo | **0.4–0.6 s** for 2–10 s of sound |
 | `moss-sfx-v2` | MOSS-SoundEffect v2.0, PyTorch MPS | 48 kHz mono | ~90 s whatever the length |
+
+Use `stable-audio-3-medium-sfx`. In a blind listening test on the nine sounds of a car-chase trailer
+(four setups, two seeds each), its sound was picked for eight; for the ninth no setup fitted.
 
 - **Closed workflows.** Clients send `prompt`, `negative_prompt`, `duration_sec` (0.5–10), a seed and a
   count — never model names, steps, guidance or paths.
@@ -43,15 +47,15 @@ needs only a different workflow id, body and output type. The full contract is [
 
 ## Requirements
 
-- Apple Silicon Mac, macOS 14+. 32 GB of memory recommended for MOSS (Stable Audio 3 alone peaks
-  at ~4 GB).
+- Apple Silicon Mac, macOS 14+. 32 GB of memory recommended (Stable Audio 3 peaks at ~11 GB with
+  medium and ~4 GB with sm-sfx, MOSS at ~22 GB).
 - Python 3.12+ and [uv](https://docs.astral.sh/uv/) for sfx-api itself.
 - Either engine, or both, each in its own environment (sfx-api runs it as a separate worker process;
   the environments never mix):
 
 | engine | code | weights | download |
 |---|---|---|---|
-| Stable Audio 3 | [Stability-AI/stable-audio-3](https://github.com/Stability-AI/stable-audio-3) `optimized/mlx` (MIT) | [stabilityai/stable-audio-3-optimized](https://huggingface.co/stabilityai/stable-audio-3-optimized) `MLX/` (Stability AI Community License, not gated) | 1.9 GB (sm-sfx, SAME-S, T5Gemma) |
+| Stable Audio 3 | [Stability-AI/stable-audio-3](https://github.com/Stability-AI/stable-audio-3) `optimized/mlx` (MIT) | [stabilityai/stable-audio-3-optimized](https://huggingface.co/stabilityai/stable-audio-3-optimized) `MLX/` (Stability AI Community License, not gated) | 1.9 GB (sm-sfx, SAME-S, T5Gemma); medium adds 4.6 GB (its DiT and SAME-L) |
 | MOSS-SoundEffect v2.0 | [OpenMOSS/MOSS-TTS](https://github.com/OpenMOSS/MOSS-TTS) `moss_soundeffect_v2` (Apache-2.0) | [OpenMOSS-Team/MOSS-SoundEffect-v2.0](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0) (Apache-2.0, not gated) | 11.2 GB |
 
 ### Measurements
@@ -72,6 +76,17 @@ installing took 2.6 s). The same seed gave a bit-identical clip; one loaded mode
 (bit-identical to a model loaded for that length). With guidance on (`negative_prompt_cfg = 3.0`) a clip
 took 0.48–0.54 s and peaked 1–4 dB hotter before the level stage.
 
+**Stable Audio 3 medium** (8 steps, no guidance), with the worker's code outside the server, three
+clips each, GPU otherwise idle:
+
+| | 1 s clip | 2 s clip | 5 s clip | 10 s clip |
+|---|---|---|---|---|
+| models loaded | 1.10 | 1.10 | 1.23 | 1.73 |
+
+Loading took ~1 s with the files in the OS cache (reading them from disk was not measured). Peak
+memory 11 GB. Unlike sm-sfx, medium is fine at fractional lengths: 92 clips at 0.7–9.5 s (3 prompts,
+2–3 seeds) peaked at 1.7 at most, so it makes the requested length itself.
+
 **MOSS-SoundEffect v2.0** (cfg 4, PyTorch 2.9.1 on MPS), seconds per clip with the models loaded and
 the GPU otherwise idle:
 
@@ -90,10 +105,10 @@ on the GPU). While another GPU job was running on the Mac, a 50-step clip took 2
 ## Setup on the Mac
 
 ```sh
-# 1a. Stable Audio 3 (MLX): its own installer makes .venv and downloads sm-sfx
+# 1a. Stable Audio 3 (MLX): its own installer makes .venv and downloads medium and sm-sfx
 git clone https://github.com/Stability-AI/stable-audio-3 ~/.local/opt/stable-audio-3/src
 cd ~/.local/opt/stable-audio-3/src/optimized/mlx
-HF_HOME=~/.local/share/sfx-api/hf ./install.sh -y --download sm-sfx
+HF_HOME=~/.local/share/sfx-api/hf ./install.sh -y --download medium,sm-sfx
 
 # 1b. MOSS-SoundEffect v2.0 (PyTorch, MPS): code, an environment, the model repository
 git clone https://github.com/OpenMOSS/MOSS-TTS ~/.local/opt/moss-sfx/src
@@ -118,9 +133,13 @@ host = "0.0.0.0"          # LAN; requires a token
 port = 8769
 token = "…openssl rand -hex 32…"
 
-[backends.sa3]
+[backends.sa3-medium]
 mlx_dir = "~/.local/opt/stable-audio-3/src/optimized/mlx"
 hf_home = "~/.local/share/sfx-api/hf"        # where install.sh put the weights
+
+[backends.sa3]
+mlx_dir = "~/.local/opt/stable-audio-3/src/optimized/mlx"
+hf_home = "~/.local/share/sfx-api/hf"
 
 [backends.moss]
 code_dir = "~/.local/opt/moss-sfx/src"
@@ -141,7 +160,7 @@ token = "…ace-step-api's bearer token…"
 ### `doctor`
 
 ```sh
-sfx-api doctor           # platform, macOS, Python, config permissions, both engines (checkout,
+sfx-api doctor           # platform, macOS, Python, config permissions, every engine (checkout,
                          # Python, model files), disk, power, memory, every coordinate_with server
 sfx-api doctor --smoke   # + one real 1-second clip per available workflow (stop the server first)
 ```
@@ -187,7 +206,8 @@ output goes to `data_dir/engine/<engine>/worker.log`.
 | `settle_seconds` | `30` | after a coordinated server was seen busy, a job starts no sooner than this |
 | `coordination_poll_seconds` | `5` | how often a busy server is asked again |
 
-`[backends.sa3]`:
+`[backends.sa3-medium]` (medium) and `[backends.sa3]` (sm-sfx) take the same keys; a workflow whose
+table is missing reports itself unavailable:
 
 | key | default | |
 |---|---|---|
@@ -306,13 +326,19 @@ stand-in worker.
 The clips were checked by measurement (length, level, loudness per second, spectrum), not by
 listening.
 
-Stable Audio 3 at fractional lengths (found by the first client, 2026-10-18): most lengths that are
-not whole seconds (0.7, 0.9, 1.2, 2.8 s …) came out 8–40 times over full scale and sounded like
-noise, for every prompt and seed tried; the official MLX script gives the same numbers. Clips are
-now generated at the next whole second and cut (see the worker's `conditioning_seconds`). Checked
+Stable Audio 3 sm-sfx at fractional lengths (found by the first client, 2026-10-18): most lengths
+that are not whole seconds (0.7, 0.9, 1.2, 2.8 s …) came out 8–40 times over full scale and sounded
+like noise, for every prompt and seed tried; the official MLX script gives the same numbers. sm-sfx
+clips are now generated at the next whole second and cut (see the worker's `conditioning_seconds`). Checked
 afterwards: 504 whole-second clips (1–12 s, 7 prompts, 6 seeds) peak at 1.8 at most, and the
 client's 36 requests (0.7–8 s) replayed peak under 1.0. A second machine on the LAN has run jobs
 with the token.
+
+Stable Audio 3 medium (2026-10-19): the user compared nine trailer sounds in a blind listening test,
+each made four ways (sm-sfx or medium, with or without `TrackType: SFX, ` in front of the prompt) with
+two seeds, loudness-matched for playback. Medium with the tag was picked for eight sounds; for the
+ninth (an exhaust backfire) none fitted. The real-engine tests ran medium through the backend (exact
+1.4 s, the tag sent) with a config that has `[backends.sa3-medium]`.
 
 Not checked: cancelling a job on a real engine, `count` 3–4 in one job, Stable Audio 3 with
 `negative_prompt_cfg` > 1 through the server (measured outside it), MOSS on `device = "cpu"`.

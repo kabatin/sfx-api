@@ -11,6 +11,7 @@ from sfx_api.workflows.sfx import (
     MossWorkflow,
     SfxParams,
     SfxWorkflow,
+    StableAudio3MediumWorkflow,
     StableAudio3Workflow,
     clip_seeds,
 )
@@ -26,6 +27,10 @@ def sa3(**kwargs: object) -> StableAudio3Workflow:
 
 def moss() -> MossWorkflow:
     return MossWorkflow(typical_seconds_2s=60.0, uses_negative_prompt=True)
+
+
+def medium() -> StableAudio3MediumWorkflow:
+    return StableAudio3MediumWorkflow(typical_seconds_2s=1.2, uses_negative_prompt=False)
 
 
 def store(params: dict, job_dir: Path, workflow: SfxWorkflow | None = None) -> dict:
@@ -49,6 +54,23 @@ def test_defaults_and_stored_params(tmp_path: Path) -> None:
         "",
     )
     assert request.duration_s == 2.0 and request.seeds == (7,) and request.count == 1
+
+
+def test_medium_adds_the_sfx_tag_once(tmp_path: Path) -> None:
+    stored = store({"prompt": "tyre screech, close", "seed": 7}, tmp_path, medium())
+    request = medium().build_request("job_1", stored, tmp_path)
+    assert request.engine == "sa3-medium"
+    assert request.prompt == "TrackType: SFX, tyre screech, close"
+    assert stored["prompt"] == "tyre screech, close"
+    assert sa3().build_request("job_1", stored, tmp_path).prompt == "tyre screech, close"
+    for tagged in ("trackType: sfx, boom", "TrackType: Music, a riser"):
+        own = store({"prompt": tagged, "seed": 7}, tmp_path, medium())
+        assert medium().build_request("j", own, tmp_path).prompt == tagged
+    out = medium().finalize("j", stored, tmp_path, raw(tmp_path, 1, rate=44100, channels=2))
+    generation = out.result["details"]["generation"]
+    assert generation["prompt_used"] == "TrackType: SFX, tyre screech, close"
+    plain = sa3().finalize("j", stored, tmp_path, raw(tmp_path, 1, rate=44100, channels=2))
+    assert plain.result["details"]["generation"]["prompt_used"] == "tyre screech, close"
 
 
 def test_clips_are_two_seeds_apart(tmp_path: Path) -> None:
@@ -202,8 +224,13 @@ def test_capabilities() -> None:
     m = moss().capabilities()
     assert m["id"] == "moss-sfx-v2" and m["output"]["sample_rate"] == 48000
     assert m["output"]["channels"] == 1 and m["negative_prompt"]["applied"] is True
+    med = medium().capabilities()
+    assert med["id"] == "stable-audio-3-medium-sfx"
+    assert med["output"]["sample_rate"] == 44100 and med["output"]["channels"] == 2
+    assert med["prompt"] == {"max_chars": 500, "language": "en", "prefix": "TrackType: SFX, "}
+    assert med["negative_prompt"]["applied"] is False
 
 
 def test_smoke_params_are_valid() -> None:
-    for workflow in (sa3(), moss()):
+    for workflow in (sa3(), moss(), medium()):
         SfxParams.model_validate(workflow.smoke_params())

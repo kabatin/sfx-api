@@ -47,7 +47,9 @@ def assert_in_range(output: WorkflowOutput) -> None:
     assert all(c["gain_db"] > -12 for c in clips), clips
 
 
-@pytest.mark.parametrize("workflow_id", ["stable-audio-3-sfx", "moss-sfx-v2"])
+@pytest.mark.parametrize(
+    "workflow_id", ["stable-audio-3-sfx", "stable-audio-3-medium-sfx", "moss-sfx-v2"]
+)
 def test_a_real_clip(tmp_path: Path, workflow_id: str) -> None:
     output = run(
         tmp_path,
@@ -71,4 +73,17 @@ def test_sa3_fractional_length(tmp_path: Path) -> None:
         tmp_path, "stable-audio-3-sfx", {"prompt": prompt, "duration_sec": 0.7, "seed": 21}
     )
     assert inspect_wav(output.files[0]).seconds == pytest.approx(0.7, abs=0.01)
+    assert_in_range(output)
+
+
+def test_sa3_medium_sends_the_sfx_tag(tmp_path: Path) -> None:
+    output = run(
+        tmp_path,
+        "stable-audio-3-medium-sfx",
+        {"prompt": "Car speeding past at high velocity, doppler effect.", "duration_sec": 1.4,
+         "seed": 29},
+    )  # fmt: skip
+    generation = output.result["details"]["generation"]
+    assert generation["prompt_used"].startswith("TrackType: SFX, Car speeding past")
+    assert inspect_wav(output.files[0]).seconds == pytest.approx(1.4, abs=0.01)
     assert_in_range(output)

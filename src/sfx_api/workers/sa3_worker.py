@@ -7,13 +7,17 @@ Protocol: see :mod:`sfx_api.workers.sfx_worker_protocol`. Requests carry ``promp
 
 All MLX work happens on this process's main thread: from MLX 0.31 GPU streams are per-thread.
 
+One worker runs one model (``--dit`` / ``--decoder``: sm-sfx with SAME-S, or medium with SAME-L).
+
 Facts measured on the target Mac (M5, 32 GB, sm-sfx, 8 steps): models load in ~0.6 s, the
 first clip takes ~2.6 s (kernel compilation), later clips 0.37 s (2 s) to 0.53 s (10 s); one
 loaded DiT serves every length (bit-identical to a DiT loaded for that length); the same seed
-gives the same clip.
+gives the same clip. medium: ~1 s to load, 1.1 s (1-2 s) to 1.7 s (10 s) per clip.
 
-The model only knows whole seconds (see :func:`conditioning_seconds`): a clip is generated at the
-next whole second and cut to the requested length.
+sm-sfx only knows whole seconds (see :func:`conditioning_seconds`): with ``--whole-seconds`` a clip
+is generated at the next whole second and cut to the requested length. medium makes fractional
+lengths fine (72 clips at 0.7-3.8 s, 3 prompts x 3 seeds, peaked at 1.6 at most), so it runs
+without the flag and makes the requested length itself.
 """
 
 from __future__ import annotations
@@ -30,18 +34,16 @@ from typing import Any
 sys.path.append(str(Path(__file__).resolve().parent))
 import sfx_worker_protocol as protocol
 
-# Stable Audio 3's recommendation for the distilled sm-sfx model
+# Stable Audio 3's recommendation for its distilled models
 STEPS = 8
 SIGMA_MAX = 1.0  # text-to-audio: start from pure noise
-DIT_NAME = "sm-sfx"
-DECODER_NAME = "same-s"
 T5_MAX_TOKENS = 256
 # a load-time shape only (one loaded DiT serves every length)
 LOAD_SECONDS = 10.0
 
 
 def conditioning_seconds(seconds: float, sample_rate: int) -> int:
-    """The whole-second length a ``seconds`` clip is conditioned on and generated at.
+    """The whole-second length a ``seconds`` clip is conditioned on and generated at (sm-sfx).
 
     Training conditions on ``ceil(n_samples / sample_rate)`` and both official demos offer whole
     seconds from 1. Fractional values are outside that: conditioned on 0.7, 0.9, 1.1-1.3, 1.7,
@@ -52,7 +54,9 @@ def conditioning_seconds(seconds: float, sample_rate: int) -> int:
 
 
 class Engine:
-    def __init__(self, mlx_dir: Path, *, negative_cfg: float) -> None:
+    def __init__(
+        self, mlx_dir: Path, *, dit: str, decoder: str, whole_seconds: bool, negative_cfg: float
+    ) -> None:
         sys.path[:0] = [str(mlx_dir), str(mlx_dir / "scripts")]
         import mlx.core as mx  # pyright: ignore[reportMissingImports]
         from models.defs.sa3_pipeline import (  # pyright: ignore[reportMissingImports]
@@ -82,16 +86,15 @@ class Engine:
         self.samples_per_latent = int(SAMPLES_PER_LATENT)
         # cfg 1.0 (the distilled default) runs no unconditional pass: a negative prompt needs > 1
         self.negative_cfg = negative_cfg
+        self.whole_seconds = whole_seconds
         mx.set_default_device(mx.gpu)
         self.t5 = T5Gemma.from_npz(str(ensure_local(T5GEMMA_NPZ_REL)))
         self.padding_emb, self.secs_embedder = load_conditioner_from_npz(
-            str(ensure_local(DIT_CHOICES[DIT_NAME]["ckpt"])), prefix="cond."
+            str(ensure_local(DIT_CHOICES[dit]["ckpt"])), prefix="cond."
         )
         t_lat = math.ceil(LOAD_SECONDS * self.sample_rate / self.samples_per_latent)
-        self.dit, _ = load_dit(DIT_NAME, T_lat=t_lat, dtype=mx.float16)
-        self.decoder, self.chunk_fn, (self.chunk, self.overlap) = load_decoder(
-            DECODER_NAME, mx.float32
-        )
+        self.dit, _ = load_dit(dit, T_lat=t_lat, dtype=mx.float16)
+        self.decoder, self.chunk_fn, (self.chunk, self.overlap) = load_decoder(decoder, mx.float32)
         mx.eval(self.dit.parameters())
 
     def _embed(self, text: str, seconds_embed: Any) -> Any:
@@ -109,9 +112,9 @@ class Engine:
         import numpy as np  # pyright: ignore[reportMissingImports]
 
         mx = self.mx
-        whole = conditioning_seconds(seconds, self.sample_rate)
-        t_lat = math.ceil(whole * self.sample_rate / self.samples_per_latent)
-        seconds_embed = self.secs_embedder(float(whole)).astype(mx.float16)
+        made = conditioning_seconds(seconds, self.sample_rate) if self.whole_seconds else seconds
+        t_lat = max(1, math.ceil(made * self.sample_rate / self.samples_per_latent))
+        seconds_embed = self.secs_embedder(float(made)).astype(mx.float16)
         cross = self._embed(prompt, seconds_embed)
         global_cond = seconds_embed[:, 0, :]
         cfg = self.negative_cfg if negative and self.negative_cfg > 1.0 else 1.0
@@ -143,7 +146,7 @@ class Engine:
         return data[..., : round(seconds * self.sample_rate)], {"cfg": cfg}
 
     def _decode(self, latents: Any, t_lat: int) -> Any:
-        """SAME-S decode, as the checkout's own generator does it for each latent length."""
+        """Decode (SAME-S or SAME-L) as the checkout's own generator does for each latent length."""
         mx = self.mx
         if t_lat > self.chunk + 2 * self.overlap:
             patches = self.chunk_fn(self.decoder, latents, self.chunk, self.overlap)
@@ -175,11 +178,20 @@ def main() -> int:
     parser.add_argument("--proto-fd", type=int, required=True)
     parser.add_argument("--mlx-dir", required=True)
     parser.add_argument("--negative-cfg", type=float, default=1.0)
+    parser.add_argument("--dit", required=True)
+    parser.add_argument("--decoder", required=True)
+    parser.add_argument("--whole-seconds", action="store_true")
     args = parser.parse_args()
     channel = protocol.open_channel(args.proto_fd)
     started = time.monotonic()
     try:
-        engine = Engine(Path(args.mlx_dir), negative_cfg=args.negative_cfg)
+        engine = Engine(
+            Path(args.mlx_dir),
+            dit=args.dit,
+            decoder=args.decoder,
+            whole_seconds=args.whole_seconds,
+            negative_cfg=args.negative_cfg,
+        )
     except Exception as exc:
         return protocol.fatal(channel, exc)
     protocol.send(channel, event="ready", load_s=round(time.monotonic() - started, 2), device="mlx")
