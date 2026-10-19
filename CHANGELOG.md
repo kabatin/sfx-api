@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-10-19
 
 First version, built on the job server of [ace-step-api](https://github.com/kabatin/ace-step-api) 0.1.0.
 
@@ -19,9 +19,11 @@ First version, built on the job server of [ace-step-api](https://github.com/kaba
   0.5–190 (default 30).
 - One resident worker per engine in that engine's own Python (`-P`, own process group, requests on
   stdin, replies on a private pipe, offline), released when idle, when a coordinated server is busy,
-  after failed jobs and on shutdown. The server starts when at least one engine is available.
+  after failed jobs and on shutdown; only the running job's engine stays in memory. The server starts
+  when at least one engine is available.
 - MOSS on Apple Silicon: the upstream CUDA assumptions (complex128 RoPE tables, float64 timestep
   embedding, CUDA-only full-precision autocast blocks) are patched in memory by the worker.
 - Output level: a clip whose peak exceeds −1 dBFS is turned down as a whole (no limiter).
 - Coordination with vpipe-api, klein-api and ace-step-api (`waiting_for_peer` yields, so servers that
-  wait for each other cannot deadlock).
+  wait for each other cannot deadlock). The peer probe follows no redirects and never goes through a
+  proxy, so a peer token only reaches that peer's `health_url`.
