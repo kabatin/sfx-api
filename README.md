@@ -85,7 +85,9 @@ clips each, GPU otherwise idle:
 
 Loading took ~1 s with the files in the OS cache (reading them from disk was not measured). Peak
 memory 11 GB. Unlike sm-sfx, medium is fine at fractional lengths: 92 clips at 0.7–9.5 s (3 prompts,
-2–3 seeds) peaked at 1.7 at most, so it makes the requested length itself.
+2–3 seeds) peaked at 1.7 at most, so it makes the requested length itself. Through the running
+server, `count: 1` jobs with the same prompt and seed gave the same clips bit for bit (5 clips of
+2–3 s).
 
 **MOSS-SoundEffect v2.0** (cfg 4, PyTorch 2.9.1 on MPS), seconds per clip with the models loaded and
 the GPU otherwise idle:
@@ -337,8 +339,10 @@ with the token.
 Stable Audio 3 medium (2026-10-19): the user compared nine trailer sounds in a blind listening test,
 each made four ways (sm-sfx or medium, with or without `TrackType: SFX, ` in front of the prompt) with
 two seeds, loudness-matched for playback. Medium with the tag was picked for eight sounds; for the
-ninth (an exhaust backfire) none fitted. The real-engine tests ran medium through the backend (exact
-1.4 s, the tag sent) with a config that has `[backends.sa3-medium]`.
+ninth (an exhaust backfire) none fitted. A second round on the backfire (eight wordings, medium with
+the tag) found a usable clip for seven of them, so the wording was the problem, not the length. The
+real-engine tests ran medium through the backend (exact 1.4 s, the tag sent) with a config that has
+`[backends.sa3-medium]`.
 
 Not checked: cancelling a job on a real engine, `count` 3–4 in one job, Stable Audio 3 with
 `negative_prompt_cfg` > 1 through the server (measured outside it), MOSS on `device = "cpu"`.

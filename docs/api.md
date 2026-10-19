@@ -131,8 +131,9 @@ Anything else in the body — model names, steps, guidance, file paths — is re
 
 **Seeds.** Clips are two seeds apart because Stable Audio 3 draws its starting noise from `seed` and
 its sampler noise from `seed + 1`: consecutive seeds would share randomness. To make one clip again,
-send its `seed_used` with `count: 1`. With `stable-audio-3-sfx` the same seed and prompt give the
-same clip (verified bit-identical); `moss-sfx-v2` draws its noise on the CPU from the seed as well.
+send its `seed_used` with `count: 1`. With `stable-audio-3-sfx` and `stable-audio-3-medium-sfx` the
+same seed and prompt give the same clip (verified bit-identical); `moss-sfx-v2` draws its noise on the
+CPU from the seed as well.
 
 Success is `202 Accepted`:
 
