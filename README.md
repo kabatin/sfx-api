@@ -263,8 +263,9 @@ Redirects are not followed, so a peer token only ever goes to its own `health_ur
 
 **Yielding.** While its head job waits for a peer, sfx-api's own `/v1/health` reports the queue as
 `waiting_for_peer` and `waiting: 0`, so a server that lists sfx-api in its own `coordinate_with` goes
-first instead of waiting forever. vpipe-api counts only its own processes, so it never waits for
-sfx-api.
+first instead of waiting forever. vpipe-api 0.1.4 and later can list sfx-api too and yields the same
+way: when both have jobs waiting, the first final check to pass starts its job and the other sees
+`running: 1` and waits. Both start only if the two final checks overlap, a window as long as one check.
 
 ### Resident engines
 

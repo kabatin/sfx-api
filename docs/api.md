@@ -228,7 +228,9 @@ checked only before a job starts; a running job is never paused.
 
 Servers that list each other cannot deadlock: while sfx-api's head job waits for a peer,
 `/v1/health` reports the queued jobs as `waiting_for_peer` and `waiting: 0`, so the peer sees it idle
-and goes first. vpipe-api never waits for anyone; sfx-api waits for it.
+and goes first. vpipe-api 0.1.4 and later can list sfx-api too and yields the same way; when both
+have jobs waiting, the first final check to pass starts its job and the other sees `running: 1` and
+waits. Both start only if the two final checks overlap, a window as long as one check.
 
 **Memory.** Between jobs each engine keeps its models loaded for `resident_idle_seconds` (default
 300). An engine is released at once when a listed server is seen busy while it idles, after any job of
