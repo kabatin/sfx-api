@@ -5,7 +5,7 @@ kept, ``install.sh`` skips present weights, and both downloads resume."""
 from __future__ import annotations
 
 import shutil
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,8 +41,14 @@ def ensure_checkout(dest: Path, repo: str, commit: str, tools: Tools) -> None:
     partial.rename(dest)
 
 
-def _must(tools: Tools, cmd: Sequence[str], *, cwd: Path | None = None) -> None:
-    code = tools.run(cmd, cwd=cwd)
+def _must(
+    tools: Tools,
+    cmd: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> None:
+    code = tools.run(cmd, cwd=cwd, env=env)
     if code != 0:
         raise SetupError(f"`{' '.join(cmd[:3])} …` failed (exit {code}); see the output above")
 
@@ -57,17 +63,48 @@ def install_sa3(paths: Sa3Paths, bundles: Sequence[str], tools: Tools) -> None:
     if checkout is not None:
         ensure_checkout(checkout, pins.SA3_REPO, pins.SA3_COMMIT, tools)
     paths.hf_home.mkdir(parents=True, exist_ok=True)
-    tools.emit(f"Stable Audio 3: install.sh --download {','.join(bundles)}")
+    hub = {"HF_HOME": str(paths.hf_home), "HF_HUB_CACHE": str(paths.hf_home / "hub")}
+    fetch_sa3_weights(paths, bundles, tools, hub)
+    tools.emit(f"Stable Audio 3: install.sh --download {','.join(bundles)} (offline)")
     cmd = ["./install.sh", "-y", "--python", pins.SA3_PYTHON, "--download", ",".join(bundles)]
-    run_resuming(
-        tools.run,
-        "Stable Audio 3",
-        cmd,
-        cwd=paths.mlx_dir,
-        env={"HF_HOME": str(paths.hf_home)},
-        watch=paths.hf_home,
-        emit=tools.emit,
+    env = {**hub, "HF_HUB_OFFLINE": "1", "UV_EXCLUDE_NEWER": pins.UV_EXCLUDE_NEWER}
+    _must(tools, cmd, cwd=paths.mlx_dir, env=env)
+
+
+def sa3_ref(hf_home: Path) -> Path:
+    repo = "models--" + pins.SA3_WEIGHTS_REPO.replace("/", "--")
+    return hf_home / "hub" / repo / "refs" / "main"
+
+
+def fetch_sa3_weights(
+    paths: Sa3Paths, bundles: Sequence[str], tools: Tools, env: Mapping[str, str]
+) -> None:
+    """Download the bundles' files at the pinned revision and make it the one ``main`` names,
+    which is what upstream's revision-less ``hf_hub_download`` resolves offline."""
+    names = [*pins.SA3_SHARED_FILES]
+    for bundle in bundles:
+        names.extend(n for n in pins.SA3_FILES[bundle] if n not in names)
+    files = [f"{pins.SA3_WEIGHTS_DIR}/{name}" for name in names]
+    tools.emit(
+        f"Stable Audio 3: downloading {len(files)} files at {pins.SA3_WEIGHTS_REVISION[:12]}"
     )
+    cmd = [
+        "uvx",
+        "--from",
+        pins.HF_CLI,
+        "hf",
+        "download",
+        pins.SA3_WEIGHTS_REPO,
+        *files,
+        "--revision",
+        pins.SA3_WEIGHTS_REVISION,
+    ]
+    run_resuming(
+        tools.run, "Stable Audio 3 weights", cmd, env=env, watch=paths.hf_home, emit=tools.emit
+    )
+    ref = sa3_ref(paths.hf_home)
+    ref.parent.mkdir(parents=True, exist_ok=True)
+    ref.write_text(pins.SA3_WEIGHTS_REVISION)
 
 
 def install_moss(paths: MossPaths, tools: Tools) -> None:
@@ -76,7 +113,8 @@ def install_moss(paths: MossPaths, tools: Tools) -> None:
         tools.emit(f"MOSS: creating {paths.venv} (Python {pins.MOSS_PYTHON})")
         _must(tools, ["uv", "venv", "--python", pins.MOSS_PYTHON, str(paths.venv)])
     tools.emit("MOSS: installing PyTorch and the pipeline's pinned packages")
-    _must(tools, ["uv", "pip", "install", "--python", str(paths.python), *pins.MOSS_PACKAGES])
+    pip = ["uv", "pip", "install", "--python", str(paths.python), *pins.MOSS_PACKAGES]
+    _must(tools, pip, env={"UV_EXCLUDE_NEWER": pins.UV_EXCLUDE_NEWER})
     paths.model_dir.mkdir(parents=True, exist_ok=True)
     tools.emit(f"MOSS: downloading {pins.MOSS_MODEL_REPO} into {paths.model_dir}")
     cmd = [

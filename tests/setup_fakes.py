@@ -34,7 +34,7 @@ class FakeInstallers:
 
     calls: list[tuple[str, ...]] = field(default_factory=list)
     envs: list[Mapping[str, str]] = field(default_factory=list)
-    fail: set[str] = field(default_factory=set)  # first words of commands that exit 1
+    fail: set[str] = field(default_factory=set)  # a first word, a command prefix or an argument
     clones: dict[str, str] = field(default_factory=dict)  # dest -> repo
 
     def __call__(
@@ -48,8 +48,8 @@ class FakeInstallers:
         cmd = tuple(cmd)
         self.calls.append(cmd)
         self.envs.append(dict(env or {}))
-        key = " ".join(cmd[:2])
-        if cmd[0] in self.fail or key in self.fail:
+        line = " ".join(cmd)
+        if any(cmd[0] == f or line.startswith(f + " ") or f in cmd for f in self.fail):
             return 1
         if cmd[:2] == ("git", "clone"):
             Path(cmd[-1]).mkdir(parents=True)
@@ -66,7 +66,7 @@ class FakeInstallers:
                 touch(cwd / "models" / "mlx" / name)
         elif cmd[:2] == ("uv", "venv"):
             make_exe(Path(cmd[-1]) / "bin" / "python")
-        elif cmd[0] == "uvx":
+        elif cmd[0] == "uvx" and "--local-dir" in cmd:
             local = Path(cmd[cmd.index("--local-dir") + 1])
             for name in MOSS_FILES:
                 touch(local / name)

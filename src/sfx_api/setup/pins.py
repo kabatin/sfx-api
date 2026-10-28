@@ -8,6 +8,11 @@ from dataclasses import dataclass
 SA3_REPO = "https://github.com/Stability-AI/stable-audio-3"
 SA3_COMMIT = "77e0398c26f7d22d801ec1bb036307e8b231f741"
 SA3_PYTHON = "3.11"  # install.sh's own default
+# the weights: upstream's installer downloads them without a revision, so setup fetches them at
+# this one into HF_HOME first, points refs/main at it and runs the installer offline
+SA3_WEIGHTS_REPO = "stabilityai/stable-audio-3-optimized"
+SA3_WEIGHTS_REVISION = "08b17423649b5714b22eab20f96bf00751f2358a"
+SA3_WEIGHTS_DIR = "MLX"  # the files' directory in that repository
 # install.sh's bundle name per component (``--download a,b``)
 SA3_BUNDLES = {"sa3-medium": "medium", "sa3-small": "sm-sfx"}
 # what install.py downloads per bundle into ``models/mlx/`` (it also fetches the encoders)
@@ -51,8 +56,11 @@ MOSS_MODEL_REVISION = "e35df4d82fbe87fcd5d14e5d100e349c0c3c076d"
 MOSS_MODEL_BYTES = 11_230_170_282
 # torch, transformers, diffusers, descript-audiotools and their dependencies (estimate)
 MOSS_ENV_BYTES = 1_000_000_000
-# the CLI that downloads the MOSS model, run with uvx so the engine's own environment stays
-# exactly the README's pins
+# requirements.txt (SA3) and the MOSS pins' dependencies have lower bounds only: uv resolves
+# them as of this date
+UV_EXCLUDE_NEWER = "2026-10-28T00:00:00Z"
+# the CLI that downloads the weights, run with uvx so the engines' own environments stay
+# exactly as pinned
 HF_CLI = "huggingface_hub==2.3.0"
 
 

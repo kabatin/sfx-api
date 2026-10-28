@@ -123,10 +123,24 @@ def test_install_all_then_rerun_is_already(tmp_path: Path) -> None:
     (installer,) = run.commands("./install.sh")
     assert installer[installer.index("--download") + 1] == "medium,sm-sfx"
     assert run.envs[run.calls.index(installer)]["HF_HOME"] == str(opt / "hf")
-    (hf,) = run.commands("uvx")
-    assert pins.MOSS_MODEL_REVISION in hf and pins.HF_CLI in hf
+    sa3_hf, moss_hf = run.commands("uvx")
+    assert pins.MOSS_MODEL_REVISION in moss_hf and pins.HF_CLI in moss_hf
     pip = next(c for c in run.calls if c[:3] == ("uv", "pip", "install"))
     assert "torch==2.9.1" in pip
+    assert run.envs[run.calls.index(pip)]["UV_EXCLUDE_NEWER"] == pins.UV_EXCLUDE_NEWER
+
+    # SA3: the weights come at a pinned revision first, then install.sh links them offline
+    assert run.calls.index(sa3_hf) < run.calls.index(installer)
+    assert sa3_hf[sa3_hf.index("--revision") + 1] == pins.SA3_WEIGHTS_REVISION
+    assert pins.SA3_WEIGHTS_REPO in sa3_hf and "--local-dir" not in sa3_hf
+    wanted = {f"MLX/{name}" for b in pins.SA3_FILES.values() for name in b}
+    assert set(sa3_hf) >= wanted | {f"MLX/{name}" for name in pins.SA3_SHARED_FILES}
+    assert run.envs[run.calls.index(sa3_hf)]["HF_HOME"] == str(opt / "hf")
+    installer_env = run.envs[run.calls.index(installer)]
+    assert installer_env["HF_HUB_OFFLINE"] == "1"
+    assert installer_env["UV_EXCLUDE_NEWER"] == pins.UV_EXCLUDE_NEWER
+    ref = opt / "hf" / "hub" / "models--stabilityai--stable-audio-3-optimized" / "refs" / "main"
+    assert ref.read_text() == pins.SA3_WEIGHTS_REVISION
 
     config_path = Path(d.env["SFX_API_CONFIG"])
     config = tomllib.loads(config_path.read_text())
@@ -170,7 +184,7 @@ def test_existing_config_values_are_kept(tmp_path: Path) -> None:
 
 
 def test_failed_step_fails_only_its_component(tmp_path: Path) -> None:
-    run = FakeInstallers(fail={"uvx"})
+    run = FakeInstallers(fail={pins.MOSS_MODEL_REPO})
     code, report, d, _ = _setup(tmp_path, "--yes", run=run)
     assert code == 1 and not report["ok"]
     c = _by_id(report)
