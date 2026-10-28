@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import io
 import os
 import resource
 import sys
@@ -193,8 +194,27 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _parse(argv: list[str]) -> argparse.Namespace | int:
+    """Parse ``argv``; ``setup --json`` reports a usage error as its JSON object (exit 2)."""
+    if not ("setup" in argv and "--json" in argv):
+        return build_parser().parse_args(argv)
+    captured = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(captured):
+            return build_parser().parse_args(argv)
+    except SystemExit as exc:
+        sys.stderr.write(captured.getvalue())
+        if exc.code != 2:
+            raise
+        lines = captured.getvalue().strip().splitlines()
+        return setup_command.cmd_usage_error(lines[-1] if lines else "invalid arguments")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+    parsed = _parse(list(sys.argv[1:] if argv is None else argv))
+    if isinstance(parsed, int):
+        return parsed
+    args = parsed
     configure_logging()
     if args.command == "setup":
         # setup reads and repairs the config itself: it must run when the config does not load

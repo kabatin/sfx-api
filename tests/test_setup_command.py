@@ -296,8 +296,8 @@ def test_service_writes_the_plist_and_waits_for_health(tmp_path: Path) -> None:
     run = FakeInstallers(codes={"launchctl print": [113]})
     http = FakeHttp(statuses=[None, None, 200])
     code, report, d, _ = _setup(
-        tmp_path, "--models", "sa3-small", "--yes", "--service", "--label-suffix", "test", "--port", "8800",
-        run=run, http=http,
+        tmp_path, "--models", "sa3-small", "--yes", "--service",
+        "--label-suffix", "test", "--port", "8800", run=run, http=http,
     )  # fmt: skip
     assert code == 0, report
     label = "com.github.kabatin.sfx-api.test"
@@ -394,3 +394,26 @@ def test_service_gives_up_on_other_bootstrap_errors(tmp_path: Path) -> None:
     code, report, _, _ = _service(tmp_path, run)
     assert code == 1 and "bootstrap failed (exit 1)" in report["error"]
     assert _launchctl(run).count("bootstrap") == 1
+
+
+@pytest.mark.parametrize("bad", [["--port", "abc"], ["--bogus"], ["--models"]])
+def test_usage_errors_with_json_still_print_one_object(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys, bad: list[str]
+) -> None:
+    monkeypatch.setenv("SFX_API_CONFIG", str(tmp_path / "config.toml"))
+    code = main(["setup", "--json", *bad])
+    assert code == 2
+    out = capsys.readouterr().out.strip().splitlines()
+    assert len(out) == 1
+    report = json.loads(out[0])
+    assert set(report) >= {
+        "server", "version", "ok", "action", "url", "lan", "tokenSet", "configPath",
+        "service", "machine", "components",
+    }  # fmt: skip
+    assert report["ok"] is False and report["error"]
+
+
+def test_usage_errors_without_json_are_argparse_errors(capsys) -> None:
+    with pytest.raises(SystemExit) as info:
+        main(["setup", "--port", "abc"])
+    assert info.value.code == 2 and capsys.readouterr().out == ""

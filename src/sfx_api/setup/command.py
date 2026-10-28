@@ -137,6 +137,18 @@ def cmd_setup(config: str | None, args: argparse.Namespace, deps: SetupDeps | No
     return code
 
 
+def cmd_usage_error(message: str, deps: SetupDeps | None = None) -> int:
+    """``setup --json`` with arguments argparse refused: still one JSON object, exit 2."""
+    deps = deps or SetupDeps()
+    config_path = resolve_config_path(deps.env, None)
+    machine = deps.probe(DEFAULT_PREFIX.expanduser(), deps.has_tool)
+    args = argparse.Namespace(check=False)
+    report = _bare_report(config_path, machine, deps, args, message)
+    sys.stdout.write(json.dumps(report.to_json()) + "\n")
+    sys.stdout.flush()
+    return EXIT_BAD_ARGS
+
+
 def _selected(models: str | None) -> list[Spec]:
     if not models:
         return list(SPECS)
