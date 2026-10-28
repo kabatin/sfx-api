@@ -124,6 +124,46 @@ on the GPU). While another GPU job was running on the Mac, a 50-step clip took 2
 ## Setup on the Mac
 
 ```sh
+uv tool install git+https://github.com/kabatin/sfx-api
+sfx-api setup --check              # what is installed, what is missing and how much it downloads
+sfx-api setup                      # install everything (asks once, showing sizes and licences)
+sfx-api setup --models sa3-medium --yes --service   # one engine, no question, run at login
+```
+
+`setup` installs any of three components, writes their `[backends.*]` tables into the config file and
+can start the server with launchd:
+
+| `--models` id | installs | download | enables |
+|---|---|---|---|
+| `sa3-medium` | stable-audio-3 checkout + `optimized/mlx/install.sh -y --download medium` | 6.9 GB (+ 0.2 GB environment) | `stable-audio-3-medium-sfx`, `stable-audio-3-medium-music` |
+| `sa3-small` | the same checkout + `install.sh -y --download sm-sfx` | 1.9 GB (+ 0.2 GB environment) | `stable-audio-3-sfx` |
+| `moss` | MOSS-TTS checkout, a Python 3.12 environment with the pins below, `hf download OpenMOSS-Team/MOSS-SoundEffect-v2.0` | 11.2 GB (+ ~1 GB environment) | `moss-sfx-v2` |
+
+The two Stable Audio 3 components share the checkout, its environment and T5Gemma (0.6 GB, counted
+once); `install.sh` also fetches each model's encoder, which the server does not use. Every commit and
+revision is pinned in [`src/sfx_api/setup/pins.py`](src/sfx_api/setup/pins.py).
+
+| flag | |
+|---|---|
+| `--check` | change nothing; report the machine, each component (`installed` / `missing` / `unsupported`) and its download size |
+| `--yes` | download without asking; without it and without a terminal, setup does nothing and exits 3 |
+| `--json` | exactly one JSON object as the last line of stdout (progress stays on stderr) |
+| `--prefix DIR` | where checkouts, environments and weights go (default `~/.local/opt/sfx-api`); paths already in the config win |
+| `--lan` | `host = "0.0.0.0"` and a token: `$SFX_API_TOKEN`, else the config's, else a new one (never printed) |
+| `--port N` | `port = N` |
+| `--coordinate-with NAME=HEALTH_URL` | add a `[[coordinate_with]]` entry (repeatable); its token from `$SFX_API_COORD_TOKEN_<NAME>` |
+| `--service` | write `~/Library/LaunchAgents/com.github.kabatin.sfx-api.plist`, load it, wait up to 60 s for `/v1/health` |
+| `--label-suffix S` | `com.github.kabatin.sfx-api.S`, to run a second install beside the first |
+
+Exit codes: 0 ok, 1 failed, 2 bad arguments, 3 needs confirmation or a person. Running it again is
+safe: present engines are `already`, an interrupted download resumes (a download that stops growing
+for 10 minutes is restarted), and setup refuses to start when the disk is too full. The config keeps
+every existing value; setup only adds what is missing (and what `--lan` / `--port` ask for), writes it
+atomically with mode 0600, and checks that the server would load it.
+
+Or by hand:
+
+```sh
 # 1a. Stable Audio 3 (MLX): its own installer makes .venv and downloads medium and sm-sfx
 git clone https://github.com/Stability-AI/stable-audio-3 ~/.local/opt/stable-audio-3/src
 cd ~/.local/opt/stable-audio-3/src/optimized/mlx

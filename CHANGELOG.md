@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- `sfx-api setup`: the install command shared by the AI servers. `--models sa3-medium,sa3-small,moss`
+  (default all), `--check` (changes nothing: machine, per-component state and download bytes),
+  `--yes`, `--json` (one object on stdout), `--prefix`, `--lan` (token from `SFX_API_TOKEN`, the
+  config or generated; never printed), `--port`, `--coordinate-with NAME=URL`, `--service` (launchd
+  plist, `bootout` + `bootstrap`, waits for `/v1/health`), `--label-suffix`. Stable Audio 3 runs its
+  own `install.sh` at a pinned commit; MOSS gets a pinned checkout, the README's pinned environment and
+  the model at a pinned revision. Downloads resume, a stalled one is restarted, free disk is checked
+  first. The config is merged (existing values kept), written atomically with mode 0600 and validated
+  by the server's own loader.
+
 ## 0.1.0 — 2026-10-19
 
 First version, built on the job server of [ace-step-api](https://github.com/kabatin/ace-step-api) 0.1.0.
