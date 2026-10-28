@@ -163,6 +163,9 @@ def run_setup(config: str | None, args: argparse.Namespace, deps: SetupDeps) -> 
             env_token(deps.env)
         if args.port is not None and not 1 <= args.port <= 65535:
             raise ValueError("--port must be 1-65535")
+        if args.label_suffix is not None and args.port is None:
+            # a second install on the first one's port would fight it for the socket
+            raise ValueError("--label-suffix needs --port (a port of its own)")
     except ValueError as exc:
         return EXIT_BAD_ARGS, _bare_report(config_path, machine, deps, args, str(exc))
     try:

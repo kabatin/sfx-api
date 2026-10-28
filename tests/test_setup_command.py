@@ -296,7 +296,7 @@ def test_service_writes_the_plist_and_waits_for_health(tmp_path: Path) -> None:
     run = FakeInstallers(codes={"launchctl print": [113]})
     http = FakeHttp(statuses=[None, None, 200])
     code, report, d, _ = _setup(
-        tmp_path, "--models", "sa3-small", "--yes", "--service", "--label-suffix", "test",
+        tmp_path, "--models", "sa3-small", "--yes", "--service", "--label-suffix", "test", "--port", "8800",
         run=run, http=http,
     )  # fmt: skip
     assert code == 0, report
@@ -309,7 +309,7 @@ def test_service_writes_the_plist_and_waits_for_health(tmp_path: Path) -> None:
     launchctl = run.commands("launchctl")
     assert [c[1] for c in launchctl] == ["bootout", "print", "bootstrap"]
     assert launchctl[0][2].endswith("/" + label)
-    assert http.seen[-1][0] == "http://127.0.0.1:8769/v1/health"
+    assert http.seen[-1][0] == "http://127.0.0.1:8800/v1/health"
 
 
 def test_service_that_never_answers(tmp_path: Path) -> None:
@@ -326,8 +326,16 @@ def test_service_needs_the_cli_on_path(tmp_path: Path) -> None:
 
 
 def test_bad_label_suffix(tmp_path: Path) -> None:
-    code, _, _, _ = _setup(tmp_path, "--check", "--label-suffix", "a/b")
+    code, _, _, _ = _setup(tmp_path, "--check", "--label-suffix", "a/b", "--port", "8800")
     assert code == 2
+
+
+def test_label_suffix_needs_its_own_port(tmp_path: Path) -> None:
+    # a second install on the first one's port would fight it for the socket
+    code, report, _, _ = _setup(tmp_path, "--check", "--label-suffix", "test")
+    assert code == 2 and "--port" in report["error"]
+    code, _, _, _ = _setup(tmp_path, "--check", "--label-suffix", "test", "--port", "8800")
+    assert code == 0
 
 
 def test_cli_runs_setup_even_when_the_config_does_not_load(
