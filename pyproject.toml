@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "sfx-api"
-version = "0.1.0"
+version = "0.1.1"
 description = "Make sound effects with Stable Audio 3 and MOSS-SoundEffect on an Apple Silicon Mac as an HTTP job API"
 readme = "README.md"
 license = "Apache-2.0"

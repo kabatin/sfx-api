@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 0.1.1 — 2026-10-28
 - `sfx-api setup`: the install command shared by the AI servers. `--models sa3-medium,sa3-small,moss`
   (default all), `--check` (changes nothing: machine, per-component state and download bytes),
   `--yes`, `--json` (one object on stdout), `--prefix`, `--lan` (token from `SFX_API_TOKEN`, the

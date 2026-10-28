@@ -58,7 +58,7 @@ Identical to ace-step-api:
 
 ```json
 {
-  "status": "ok", "version": "0.1.0", "running": 0, "waiting": 0, "max_waiting": 2,
+  "status": "ok", "version": "0.1.1", "running": 0, "waiting": 0, "max_waiting": 2,
   "waiting_for_peer": 0,
   "workflows": {
     "stable-audio-3-sfx": { "available": true, "loaded": true, "reason": null },
@@ -82,7 +82,7 @@ descriptors** — a client must not assume values that are not listed here.
 
 ```json
 {
-  "version": "0.1.0",
+  "version": "0.1.1",
   "queue": { "max_running": 1, "max_waiting": 2 },
   "workflows": [{
     "id": "stable-audio-3-sfx",

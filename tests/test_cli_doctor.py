@@ -173,7 +173,7 @@ def test_smoke_skips_only_the_unavailable_engine(settings: Settings, healthy: No
 def test_version(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit):
         cli.main(["--version"])
-    assert "sfx-api 0.1.0" in capsys.readouterr().out
+    assert "sfx-api 0.1.1" in capsys.readouterr().out
 
 
 def test_workflows_and_config_hide_the_token(
