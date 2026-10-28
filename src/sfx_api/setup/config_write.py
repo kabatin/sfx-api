@@ -20,7 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from sfx_api.settings import _TOKEN, ENV_PREFIX, SettingsError, load_settings
+from pydantic import ValidationError
+
+from sfx_api.settings import _TOKEN, ENV_PREFIX, PeerServer, SettingsError, load_settings
 from sfx_api.setup.process import SetupError
 
 LAN_HOST = "0.0.0.0"  # noqa: S104 - --lan asks for exactly this
@@ -141,13 +143,37 @@ def plan_config(
     return data
 
 
-def _lan_token(existing: Any, env: Mapping[str, str]) -> str:
+def env_token(env: Mapping[str, str]) -> str | None:
+    """``$SFX_API_TOKEN`` when set; ValueError (naming the variable only) when it is invalid."""
     from_env = env.get(ENV_PREFIX + "TOKEN", "").strip()
+    if from_env and not _TOKEN.fullmatch(from_env):
+        raise ValueError(
+            f"{ENV_PREFIX}TOKEN must be at least 32 printable ASCII characters without spaces"
+        )
+    return from_env or None
+
+
+def check_peer(peer: Peer, env: Mapping[str, str]) -> None:
+    """The server's own rules for a ``[[coordinate_with]]`` entry; ValueError without values."""
+    data: dict[str, Any] = {"name": peer.name, "health_url": peer.health_url}
+    token = env.get(peer_token_env(peer.name), "").strip()
+    if token:
+        data["token"] = token
+    try:
+        PeerServer.model_validate(data)
+    except ValidationError as exc:
+        problems = "; ".join(
+            f"{'.'.join(str(p) for p in err['loc'])}: {err['msg']}" for err in exc.errors()
+        )
+        raise ValueError(f"--coordinate-with {peer.name[:64]!r}: {problems}") from exc
+
+
+def _lan_token(existing: Any, env: Mapping[str, str]) -> str:
+    try:
+        from_env = env_token(env)
+    except ValueError as exc:
+        raise SetupError(str(exc)) from exc
     if from_env:
-        if not _TOKEN.fullmatch(from_env):
-            raise SetupError(
-                f"{ENV_PREFIX}TOKEN must be at least 32 printable ASCII characters without spaces"
-            )
         return from_env
     if isinstance(existing, str) and existing:
         return existing
@@ -157,17 +183,19 @@ def _lan_token(existing: Any, env: Mapping[str, str]) -> str:
 def _with_peers(
     existing: Any, peers: Sequence[Peer], env: Mapping[str, str]
 ) -> list[dict[str, Any]]:
+    """Add each peer, or give the entry of that name the new URL (and the token from the
+    environment, when there is one)."""
     entries = [dict(e) for e in existing] if isinstance(existing, list) else []
-    names = {e.get("name") for e in entries}
     for peer in peers:
-        if peer.name in names:
-            continue
-        entry: dict[str, Any] = {"name": peer.name, "health_url": peer.health_url}
         token = env.get(peer_token_env(peer.name), "").strip()
+        update: dict[str, Any] = {"health_url": peer.health_url}
         if token:
-            entry["token"] = token
-        entries.append(entry)
-        names.add(peer.name)
+            update["token"] = token
+        index = next((i for i, e in enumerate(entries) if e.get("name") == peer.name), None)
+        if index is None:
+            entries.append({"name": peer.name, **update})
+        else:
+            entries[index] = {**entries[index], **update}
     return entries
 
 

@@ -85,11 +85,19 @@ def test_peer_token_env_name() -> None:
     assert peer_token_env("a.b_c") == "SFX_API_COORD_TOKEN_A_B_C"
 
 
-def test_existing_peer_is_left_alone() -> None:
-    existing = {"coordinate_with": [{"name": "vpipe-api", "health_url": "http://old/v1/health"}]}
+def test_existing_peer_gets_the_new_url_and_token() -> None:
+    old = {"name": "vpipe-api", "health_url": "http://old/v1/health", "token": "old-token"}
+    existing = {"coordinate_with": [old, {"name": "other", "health_url": "http://o/v1/health"}]}
     request = ConfigRequest(backends={}, peers=[Peer("vpipe-api", "http://new/v1/health")])
-    data = plan_config(existing, request, {"SFX_API_COORD_TOKEN_VPIPE_API": "t"})
-    assert data["coordinate_with"] == existing["coordinate_with"]
+    data = plan_config(existing, request, {"SFX_API_COORD_TOKEN_VPIPE_API": "new-token"})
+    assert data["coordinate_with"] == [
+        {"name": "vpipe-api", "health_url": "http://new/v1/health", "token": "new-token"},
+        {"name": "other", "health_url": "http://o/v1/health"},
+    ]
+    assert existing["coordinate_with"][0] == old
+    # without a token in the environment the one in the file stays
+    data = plan_config(existing, request, {})
+    assert data["coordinate_with"][0]["token"] == "old-token"
 
 
 def test_write_is_0600_and_validated(tmp_path: Path) -> None:

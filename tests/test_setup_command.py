@@ -234,14 +234,20 @@ def test_lan_generates_a_token_and_never_prints_it(tmp_path: Path, capsys) -> No
 
 def test_lan_takes_the_token_from_the_environment(tmp_path: Path) -> None:
     token = "t" * 40
-    _, report, d, _ = _setup(
+    code, _, d, _ = _setup(
         tmp_path, "--models", "sa3-small", "--yes", "--lan", env={"SFX_API_TOKEN": token}
     )
+    assert code == 0
     assert tomllib.loads(Path(d.env["SFX_API_CONFIG"]).read_text())["token"] == token
+
+
+def test_a_bad_lan_token_is_refused_before_any_download(tmp_path: Path) -> None:
+    run = FakeInstallers()
     code, report, _, _ = _setup(
-        tmp_path, "--models", "sa3-small", "--yes", "--lan", env={"SFX_API_TOKEN": "short"}
+        tmp_path, "--models", "sa3-small", "--yes", "--lan", env={"SFX_API_TOKEN": "short"}, run=run
     )
-    assert code == 1 and "SFX_API_TOKEN" in report["error"] and "short" not in report["error"]
+    assert code == 2 and "SFX_API_TOKEN" in report["error"] and "short" not in report["error"]
+    assert run.calls == []
 
 
 def test_port_and_coordinate_with(tmp_path: Path) -> None:
@@ -265,13 +271,25 @@ def test_port_and_coordinate_with(tmp_path: Path) -> None:
     assert [p["name"] for p in config["coordinate_with"]] == ["vpipe-api", "ace-step-api"]
 
 
-def test_bad_coordinate_with(tmp_path: Path) -> None:
-    code, _, _, _ = _setup(tmp_path, "--coordinate-with", "no-url", "--check")
-    assert code == 2
+@pytest.mark.parametrize(
+    ("peer", "env"),
+    [
+        ("no-url", {}),
+        ("x=ftp://h/", {}),
+        ("bad name=http://h/v1/health", {}),
+        ("x=http://user:pw@h/v1/health", {}),
+        ("x=http://h/v1/health", {"SFX_API_COORD_TOKEN_X": "has space"}),
+    ],
+)
+def test_bad_coordinate_with_is_refused_before_any_download(
+    tmp_path: Path, peer: str, env: dict[str, str]
+) -> None:
+    run = FakeInstallers()
     code, report, _, _ = _setup(
-        tmp_path, "--models", "sa3-small", "--yes", "--coordinate-with", "x=ftp://h/"
+        tmp_path, "--models", "sa3-small", "--yes", "--coordinate-with", peer, env=env, run=run
     )
-    assert code == 1 and "coordinate_with" in report["error"]
+    assert code == 2 and report["error"] and run.calls == []
+    assert "has space" not in report["error"] and "pw" not in report["error"]
 
 
 def test_service_writes_the_plist_and_waits_for_health(tmp_path: Path) -> None:

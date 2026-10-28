@@ -37,6 +37,8 @@ from sfx_api.setup.components import (
 from sfx_api.setup.config_write import (
     ConfigRequest,
     Peer,
+    check_peer,
+    env_token,
     parse_peer,
     plan_config,
     read_config,
@@ -155,6 +157,10 @@ def run_setup(config: str | None, args: argparse.Namespace, deps: SetupDeps) -> 
         label = service.label_for(args.label_suffix)
         specs = _selected(args.models)
         peers = [parse_peer(text) for text in args.coordinate_with]
+        for peer in peers:
+            check_peer(peer, deps.env)
+        if args.lan:
+            env_token(deps.env)
         if args.port is not None and not 1 <= args.port <= 65535:
             raise ValueError("--port must be 1-65535")
     except ValueError as exc:
