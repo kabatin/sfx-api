@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from sfx_api.setup import config_write
 from sfx_api.setup.config_write import (
     ConfigRequest,
     Peer,
@@ -26,6 +27,7 @@ def test_dumps_round_trips_the_subset() -> None:
         "settle_seconds": 30.5,
         "flag": False,
         "names": ["a", 'b"c', "d\\e"],
+        "ports": [8765, 8768],
         "odd": 'line\nbreak\t"quoted"\x7f',
         "backends": {
             "sa3-medium": {"mlx_dir": "/x/optimized/mlx", "negative_prompt_cfg": 3.0},
@@ -41,7 +43,7 @@ def test_dumps_round_trips_the_subset() -> None:
     assert tomllib.loads(dumps(data)) == data
 
 
-@pytest.mark.parametrize("value", [float("inf"), float("nan"), [1, 2], object()])
+@pytest.mark.parametrize("value", [float("inf"), float("nan"), [1, "a"], [True], [1.5], object()])
 def test_dumps_refuses_what_it_cannot_write(value: object) -> None:
     with pytest.raises(ValueError, match="cannot write"):
         dumps({"x": value})
@@ -117,3 +119,16 @@ def test_write_does_not_echo_a_bad_token(tmp_path: Path) -> None:
     with pytest.raises(SetupError) as info:
         write_config(tmp_path / "c.toml", {"token": "secret-but-short"})
     assert "secret-but-short" not in str(info.value)
+
+
+def test_a_file_that_does_not_read_back_is_not_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text("port = 8770\n")
+    # an emitter bug that drops a key the server does not require
+    monkeypatch.setattr(config_write, "dumps", lambda data: "port = 8770\n")
+    with pytest.raises(SetupError, match="read back"):
+        write_config(path, {"port": 8770, "max_waiting": 3})
+    assert path.read_text() == "port = 8770\n"
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["config.toml"]

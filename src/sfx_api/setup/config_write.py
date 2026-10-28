@@ -59,6 +59,8 @@ def _value(value: Any) -> str:
         return _string(value)
     if isinstance(value, list) and all(isinstance(v, str) for v in value):
         return "[" + ", ".join(_string(v) for v in value) + "]"
+    if isinstance(value, list) and all(type(v) is int for v in value):
+        return "[" + ", ".join(str(v) for v in value) + "]"
     raise ValueError(f"cannot write a {type(value).__name__} value")
 
 
@@ -224,6 +226,8 @@ def write_config(path: Path, data: Mapping[str, Any]) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(text)
+        if tomllib.loads(tmp.read_text(encoding="utf-8")) != data:
+            raise SetupError(f"the new config did not read back as written; {path} is unchanged")
         try:
             load_settings(env={}, config_path=tmp)
         except SettingsError as exc:
