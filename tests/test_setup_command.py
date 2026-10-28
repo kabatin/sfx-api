@@ -442,3 +442,18 @@ def test_service_plist_is_replaced_atomically(
     assert sorted(p.name for p in plist.parent.iterdir()) == [plist.name]
     for created in (plist.parent, d.home / "Library" / "Logs"):
         assert created.stat().st_mode & 0o777 == 0o700
+
+
+def test_check_after_install_says_installed(tmp_path: Path) -> None:
+    _setup(tmp_path, "--models", "sa3-small", "--yes")
+    code, report, _, _ = _setup(tmp_path, "--check", "--models", "sa3-small")
+    assert code == 0 and report["components"][0]["status"] == "installed"
+
+
+def test_unsupported_components_of_the_default_selection_do_not_fail(tmp_path: Path) -> None:
+    small = replace(APPLE, ram_gb=16)
+    code, report, _, _ = _setup(tmp_path, "--yes", machine=small)
+    assert code == 0 and report["ok"]
+    assert [c["status"] for c in report["components"]] == ["installed", "installed", "unsupported"]
+    code, report, _, _ = _setup(tmp_path, "--yes", "--models", "moss", machine=small)
+    assert code == 1 and not report["ok"]
