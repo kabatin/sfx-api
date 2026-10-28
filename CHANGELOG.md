@@ -11,6 +11,11 @@
   the model at a pinned revision. Downloads resume, a stalled one is restarted, free disk is checked
   first. The config is merged (existing values kept), written atomically with mode 0600 and validated
   by the server's own loader.
+- The Stable Audio 3 weights are fetched at a pinned revision before `install.sh` runs offline;
+  both engines' dependencies resolve with `UV_EXCLUDE_NEWER`. Peer URLs and tokens and the LAN
+  token are checked before any download; a known peer gets its new URL. `--label-suffix` needs
+  `--port`. Usage errors with `--json` still print the JSON object. The plist is replaced atomically,
+  launchd is given time to drop the old agent, and directories setup creates are 0700.
 
 ## 0.1.0 — 2026-10-19
 

@@ -135,13 +135,17 @@ can start the server with launchd:
 
 | `--models` id | installs | download | enables |
 |---|---|---|---|
-| `sa3-medium` | stable-audio-3 checkout + `optimized/mlx/install.sh -y --download medium` | 6.9 GB (+ 0.2 GB environment) | `stable-audio-3-medium-sfx`, `stable-audio-3-medium-music` |
-| `sa3-small` | the same checkout + `install.sh -y --download sm-sfx` | 1.9 GB (+ 0.2 GB environment) | `stable-audio-3-sfx` |
+| `sa3-medium` | stable-audio-3 checkout, its weights at a pinned revision, then `optimized/mlx/install.sh -y --download medium` offline | 6.9 GB (+ 0.2 GB environment) | `stable-audio-3-medium-sfx`, `stable-audio-3-medium-music` |
+| `sa3-small` | the same, with `--download sm-sfx` | 1.9 GB (+ 0.2 GB environment) | `stable-audio-3-sfx` |
 | `moss` | MOSS-TTS checkout, a Python 3.12 environment with the pins below, `hf download OpenMOSS-Team/MOSS-SoundEffect-v2.0` | 11.2 GB (+ ~1 GB environment) | `moss-sfx-v2` |
 
 The two Stable Audio 3 components share the checkout, its environment and T5Gemma (0.6 GB, counted
-once); `install.sh` also fetches each model's encoder, which the server does not use. Every commit and
-revision is pinned in [`src/sfx_api/setup/pins.py`](src/sfx_api/setup/pins.py).
+once); `install.sh` also links each model's encoder, which the server does not use. Every commit and
+revision is pinned in [`src/sfx_api/setup/pins.py`](src/sfx_api/setup/pins.py): upstream's installer
+downloads the weights without a revision, so setup fetches them first with
+`hf download stabilityai/stable-audio-3-optimized --revision <pinned>` into `HF_HOME`, points
+`refs/main` at that revision and runs `install.sh` with `HF_HUB_OFFLINE=1`; the Python dependencies
+of both engines resolve with `UV_EXCLUDE_NEWER` set to the pinned date.
 
 | flag | |
 |---|---|
@@ -151,15 +155,18 @@ revision is pinned in [`src/sfx_api/setup/pins.py`](src/sfx_api/setup/pins.py).
 | `--prefix DIR` | where checkouts, environments and weights go (default `~/.local/opt/sfx-api`); paths already in the config win |
 | `--lan` | `host = "0.0.0.0"` and a token: `$SFX_API_TOKEN`, else the config's, else a new one (never printed) |
 | `--port N` | `port = N` |
-| `--coordinate-with NAME=HEALTH_URL` | add a `[[coordinate_with]]` entry (repeatable); its token from `$SFX_API_COORD_TOKEN_<NAME>` |
-| `--service` | write `~/Library/LaunchAgents/com.github.kabatin.sfx-api.plist`, load it, wait up to 60 s for `/v1/health` |
-| `--label-suffix S` | `com.github.kabatin.sfx-api.S`, to run a second install beside the first |
+| `--coordinate-with NAME=HEALTH_URL` | add a `[[coordinate_with]]` entry, or update the URL of the one with that name (repeatable); its token from `$SFX_API_COORD_TOKEN_<NAME>` |
+| `--service` | write `~/Library/LaunchAgents/com.github.kabatin.sfx-api.plist`, reload it (`bootout`, wait until launchd has dropped it, `bootstrap`), wait up to 60 s for `/v1/health` |
+| `--label-suffix S` | `com.github.kabatin.sfx-api.S`, to run a second install beside the first; needs `--port` |
 
-Exit codes: 0 ok, 1 failed, 2 bad arguments, 3 needs confirmation or a person. Running it again is
+Exit codes: 0 ok, 1 failed, 2 bad arguments (also checked before any download: peer URLs and tokens,
+`$SFX_API_TOKEN` with `--lan`), 3 needs confirmation or a person. Without `--models`, components this
+Mac cannot run are reported as `unsupported` and skipped; asked for by name, they fail. Running it again is
 safe: present engines are `already`, an interrupted download resumes (a download that stops growing
 for 10 minutes is restarted), and setup refuses to start when the disk is too full. The config keeps
 every existing value; setup only adds what is missing (and what `--lan` / `--port` ask for), writes it
-atomically with mode 0600, and checks that the server would load it.
+atomically with mode 0600 (through a symlink, if the config is one), and checks that it reads back
+as written and that the server would load it.
 
 Or by hand:
 
