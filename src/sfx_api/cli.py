@@ -1,4 +1,4 @@
-"""``sfx-api`` command line: serve, doctor, workflows, config."""
+"""``sfx-api`` command line: serve, doctor, workflows, config, setup."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from sfx_api.doctor import run_doctor
 from sfx_api.jobs.coordination import Coordinator
 from sfx_api.logs import configure_logging
 from sfx_api.settings import Settings, SettingsError, load_settings, resolve_config_path
+from sfx_api.setup import command as setup_command
 from sfx_api.workflows import build_registry, workflow_engine
 
 _MARKS = {Level.OK: "✓", Level.WARN: "!", Level.FAIL: "✗"}
@@ -188,12 +189,19 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("workflows", help="list workflows").set_defaults(func=cmd_workflows)
     sub.add_parser("config", help="show the effective configuration").set_defaults(func=cmd_config)
+    setup_command.add_parser(sub)
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     configure_logging()
+    if args.command == "setup":
+        # setup reads and repairs the config itself: it must run when the config does not load
+        try:
+            return setup_command.cmd_setup(args.config, args)
+        except KeyboardInterrupt:
+            return 130
     try:
         settings = load_settings(config_path=Path(args.config) if args.config else None)
         return int(args.func(settings, args))
