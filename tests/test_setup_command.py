@@ -417,3 +417,28 @@ def test_usage_errors_without_json_are_argparse_errors(capsys) -> None:
     with pytest.raises(SystemExit) as info:
         main(["setup", "--port", "abc"])
     assert info.value.code == 2 and capsys.readouterr().out == ""
+
+
+def test_service_plist_is_replaced_atomically(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+
+    from sfx_api.setup import service as service_module
+
+    replaced: list[tuple[str, str]] = []
+    real_replace = os.replace
+
+    def spy(src, dst) -> None:
+        replaced.append((str(src), str(dst)))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(service_module.os, "replace", spy)
+    run = FakeInstallers(codes={"launchctl print": [113]})
+    code, report, d, _ = _service(tmp_path, run)
+    assert code == 0, report
+    plist = d.home / "Library" / "LaunchAgents" / "com.github.kabatin.sfx-api.plist"
+    assert str(plist) in [dst for _, dst in replaced]
+    assert sorted(p.name for p in plist.parent.iterdir()) == [plist.name]
+    for created in (plist.parent, d.home / "Library" / "Logs"):
+        assert created.stat().st_mode & 0o777 == 0o700

@@ -381,7 +381,8 @@ def _configure(ctx: Context, done: list[Planned], peers: Sequence[Peer]) -> tupl
     try:
         planned_data = plan_config(ctx.config, request, ctx.deps.env)
         if planned_data != ctx.config:
-            write_config(ctx.config_path, planned_data)
+            own_dir = ctx.config_path == resolve_config_path({}, None)
+            write_config(ctx.config_path, planned_data, private_dir=own_dir)
             notes.append(f"config updated: {ctx.config_path}")
         data = planned_data
     except SetupError as exc:

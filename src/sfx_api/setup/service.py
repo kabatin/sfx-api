@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from sfx_api.setup.files import make_private_dirs, write_atomic
 from sfx_api.setup.process import Emit, Run, SetupError
 
 LABEL = "com.github.kabatin.sfx-api"
@@ -133,9 +134,9 @@ def install_service(
     """Write the plist, (re)load it and wait up to a minute for ``/v1/health``."""
     plist = plist_path(deps.home, label)
     log = log_path(deps.home, label)
-    plist.parent.mkdir(parents=True, exist_ok=True)
-    log.parent.mkdir(parents=True, exist_ok=True)
-    plist.write_bytes(render_plist(label, program, log, config_path))
+    make_private_dirs(plist.parent)
+    make_private_dirs(log.parent)
+    write_atomic(plist, render_plist(label, program, log, config_path), mode=0o644)
     deps.emit(f"launchd: loading {plist}")
     target = f"gui/{deps.uid}/{label}"
     deps.run(["launchctl", "bootout", target])  # not loaded is fine

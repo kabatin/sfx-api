@@ -132,3 +132,36 @@ def test_a_file_that_does_not_read_back_is_not_installed(
         write_config(path, {"port": 8770, "max_waiting": 3})
     assert path.read_text() == "port = 8770\n"
     assert sorted(p.name for p in tmp_path.iterdir()) == ["config.toml"]
+
+
+def test_every_directory_setup_creates_is_private(tmp_path: Path) -> None:
+    path = tmp_path / "a" / "b" / "config.toml"
+    write_config(path, {"port": 8770})
+    assert (tmp_path / "a").stat().st_mode & 0o777 == 0o700
+    assert (tmp_path / "a" / "b").stat().st_mode & 0o777 == 0o700
+
+
+def test_the_servers_own_config_directory_is_made_private(tmp_path: Path) -> None:
+    own = tmp_path / "sfx-api"
+    own.mkdir(mode=0o755)
+    own.chmod(0o755)
+    write_config(own / "config.toml", {"port": 8770}, private_dir=True)
+    assert own.stat().st_mode & 0o777 == 0o700
+    # a directory the user chose (--config elsewhere) is left as it is
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o755)
+    write_config(shared / "config.toml", {"port": 8770})
+    assert shared.stat().st_mode & 0o777 == 0o755
+
+
+def test_a_symlinked_config_is_written_through_the_link(tmp_path: Path) -> None:
+    real = tmp_path / "dotfiles" / "config.toml"
+    real.parent.mkdir()
+    real.write_text("port = 8770\n")
+    link = tmp_path / "config.toml"
+    link.symlink_to(real)
+    write_config(link, {"port": 8771})
+    assert link.is_symlink()
+    assert tomllib.loads(real.read_text()) == {"port": 8771}
+    assert sorted(p.name for p in real.parent.iterdir()) == ["config.toml"]

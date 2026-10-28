@@ -23,6 +23,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from sfx_api.settings import _TOKEN, ENV_PREFIX, PeerServer, SettingsError, load_settings
+from sfx_api.setup.files import PRIVATE_DIR, make_private_dirs
 from sfx_api.setup.process import SetupError
 
 LAN_HOST = "0.0.0.0"  # noqa: S104 - --lan asks for exactly this
@@ -211,11 +212,19 @@ def read_config(path: Path) -> dict[str, Any]:
         raise SetupError(f"cannot read config file {path}: {exc}") from exc
 
 
-def write_config(path: Path, data: Mapping[str, Any]) -> None:
-    """Validate with the server's loader, then replace ``path`` atomically (0600)."""
+def write_config(path: Path, data: Mapping[str, Any], *, private_dir: bool = False) -> None:
+    """Validate with the server's loader, then replace ``path`` atomically (0600).
+
+    A symlinked config is written through the link. Directories setup creates are 0700;
+    ``private_dir`` also makes an existing parent 0700 (the server's own config directory,
+    not one the user chose with ``--config``).
+    """
+    if path.is_symlink():
+        path = path.resolve()
     parent = path.parent
-    if not parent.exists():
-        parent.mkdir(mode=0o700, parents=True)
+    make_private_dirs(parent)
+    if private_dir:
+        parent.chmod(PRIVATE_DIR)
     try:
         text = dumps(data)
     except ValueError as exc:
