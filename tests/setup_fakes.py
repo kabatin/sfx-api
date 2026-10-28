@@ -36,6 +36,9 @@ class FakeInstallers:
     envs: list[Mapping[str, str]] = field(default_factory=list)
     fail: set[str] = field(default_factory=set)  # a first word, a command prefix or an argument
     clones: dict[str, str] = field(default_factory=dict)  # dest -> repo
+    # exit codes per command prefix, in order; the last one repeats
+    codes: dict[str, list[int]] = field(default_factory=dict)
+    quiet: list[bool] = field(default_factory=list)
 
     def __call__(
         self,
@@ -44,11 +47,16 @@ class FakeInstallers:
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
         watch: Path | None = None,
+        quiet: bool = False,
     ) -> int:
         cmd = tuple(cmd)
         self.calls.append(cmd)
         self.envs.append(dict(env or {}))
+        self.quiet.append(quiet)
         line = " ".join(cmd)
+        for prefix, codes in self.codes.items():
+            if line.startswith(prefix):
+                return codes.pop(0) if len(codes) > 1 else codes[0]
         if any(cmd[0] == f or line.startswith(f + " ") or f in cmd for f in self.fail):
             return 1
         if cmd[:2] == ("git", "clone"):

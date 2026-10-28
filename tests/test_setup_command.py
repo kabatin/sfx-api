@@ -293,7 +293,7 @@ def test_bad_coordinate_with_is_refused_before_any_download(
 
 
 def test_service_writes_the_plist_and_waits_for_health(tmp_path: Path) -> None:
-    run = FakeInstallers()
+    run = FakeInstallers(codes={"launchctl print": [113]})
     http = FakeHttp(statuses=[None, None, 200])
     code, report, d, _ = _setup(
         tmp_path, "--models", "sa3-small", "--yes", "--service", "--label-suffix", "test",
@@ -307,7 +307,7 @@ def test_service_writes_the_plist_and_waits_for_health(tmp_path: Path) -> None:
     assert plist["EnvironmentVariables"]["SFX_API_CONFIG"] == d.env["SFX_API_CONFIG"]
     assert plist["StandardErrorPath"] == str(d.home / "Library" / "Logs" / "sfx-api.test.log")
     launchctl = run.commands("launchctl")
-    assert [c[1] for c in launchctl] == ["bootout", "bootstrap"]
+    assert [c[1] for c in launchctl] == ["bootout", "print", "bootstrap"]
     assert launchctl[0][2].endswith("/" + label)
     assert http.seen[-1][0] == "http://127.0.0.1:8769/v1/health"
 
@@ -342,3 +342,47 @@ def test_cli_runs_setup_even_when_the_config_does_not_load(
     report = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
     assert report["action"] == "check" and report["lan"] is True
     assert config.read_text() == 'host = "0.0.0.0"\n'
+
+
+def _service(tmp_path: Path, run: FakeInstallers, **kw):
+    return _setup(
+        tmp_path, "--models", "sa3-small", "--yes", "--service", "--port", "8769", run=run, **kw
+    )
+
+
+def _launchctl(run: FakeInstallers) -> list[str]:
+    return [c[1] for c in run.commands("launchctl")]
+
+
+def test_service_waits_for_the_old_agent_to_go(tmp_path: Path) -> None:
+    run = FakeInstallers(codes={"launchctl print": [0, 113]})
+    code, report, _, _ = _service(tmp_path, run)
+    assert code == 0, report
+    assert _launchctl(run) == ["bootout", "print", "print", "bootstrap"]
+    # launchctl print dumps the whole job: kept off the output
+    assert all(
+        q for c, q in zip(run.calls, run.quiet, strict=True) if c[:2] == ("launchctl", "print")
+    )
+
+
+def test_service_stops_waiting_after_10_seconds(tmp_path: Path) -> None:
+    run = FakeInstallers(codes={"launchctl print": [0]})
+    code, _, _, _ = _service(tmp_path, run)
+    assert code == 0
+    prints = _launchctl(run).count("print")
+    assert 1 < prints <= 3  # the fake clock moves 5 s per reading
+
+
+@pytest.mark.parametrize("busy", [5, 37])
+def test_service_retries_a_busy_bootstrap(tmp_path: Path, busy: int) -> None:
+    run = FakeInstallers(codes={"launchctl print": [113], "launchctl bootstrap": [busy, busy, 0]})
+    code, report, _, _ = _service(tmp_path, run)
+    assert code == 0, report
+    assert _launchctl(run).count("bootstrap") == 3
+
+
+def test_service_gives_up_on_other_bootstrap_errors(tmp_path: Path) -> None:
+    run = FakeInstallers(codes={"launchctl print": [113], "launchctl bootstrap": [1]})
+    code, report, _, _ = _service(tmp_path, run)
+    assert code == 1 and "bootstrap failed (exit 1)" in report["error"]
+    assert _launchctl(run).count("bootstrap") == 1

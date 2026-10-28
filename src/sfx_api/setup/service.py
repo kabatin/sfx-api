@@ -17,6 +17,11 @@ from sfx_api.setup.process import Emit, Run, SetupError
 LABEL = "com.github.kabatin.sfx-api"
 HEALTH_TIMEOUT_S = 60.0
 HEALTH_POLL_S = 2.0
+BOOTOUT_WAIT_S = 10.0
+BOOTOUT_POLL_S = 0.5
+# EIO and EALREADY: the previous job is still being removed
+BOOTSTRAP_BUSY = (5, 37)
+BOOTSTRAP_TRIES = 5
 _SUFFIX = re.compile(r"[A-Za-z0-9-]{1,32}")
 PATH = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
 
@@ -93,6 +98,29 @@ def is_healthy(deps: ServiceDeps, port: int, token: str | None) -> bool:
     return deps.http_get(health_url(port), token) == 200
 
 
+def _wait_until_gone(deps: ServiceDeps, target: str) -> None:
+    """bootout returns before launchd has removed the job; bootstrapping it again too soon
+    fails with "5: Input/output error"."""
+    deadline = deps.clock() + BOOTOUT_WAIT_S
+    while deps.run(["launchctl", "print", target], quiet=True) == 0:
+        if deps.clock() >= deadline:
+            deps.emit(f"launchd: {target} still listed after {BOOTOUT_WAIT_S:.0f} s")
+            return
+        deps.sleep(BOOTOUT_POLL_S)
+
+
+def _bootstrap(deps: ServiceDeps, plist: Path, log: Path) -> None:
+    cmd = ["launchctl", "bootstrap", f"gui/{deps.uid}", str(plist)]
+    for attempt in range(1, BOOTSTRAP_TRIES + 1):
+        code = deps.run(cmd)
+        if code == 0:
+            return
+        if code not in BOOTSTRAP_BUSY or attempt == BOOTSTRAP_TRIES:
+            raise SetupError(f"launchctl bootstrap failed (exit {code}); see {log}")
+        deps.emit(f"launchd: bootstrap busy (exit {code}); trying again")
+        deps.sleep(BOOTOUT_POLL_S)
+
+
 def install_service(
     deps: ServiceDeps,
     *,
@@ -109,10 +137,10 @@ def install_service(
     log.parent.mkdir(parents=True, exist_ok=True)
     plist.write_bytes(render_plist(label, program, log, config_path))
     deps.emit(f"launchd: loading {plist}")
-    deps.run(["launchctl", "bootout", f"gui/{deps.uid}/{label}"])  # not loaded is fine
-    code = deps.run(["launchctl", "bootstrap", f"gui/{deps.uid}", str(plist)])
-    if code != 0:
-        raise SetupError(f"launchctl bootstrap failed (exit {code}); see {log}")
+    target = f"gui/{deps.uid}/{label}"
+    deps.run(["launchctl", "bootout", target])  # not loaded is fine
+    _wait_until_gone(deps, target)
+    _bootstrap(deps, plist, log)
     deadline = deps.clock() + deps.timeout_s
     while True:
         if is_healthy(deps, port, token):

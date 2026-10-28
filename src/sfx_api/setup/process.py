@@ -37,6 +37,7 @@ class Run(Protocol):
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
         watch: Path | None = None,
+        quiet: bool = False,
     ) -> int: ...
 
 
@@ -57,16 +58,19 @@ def run_command(
     cwd: Path | None = None,
     env: Mapping[str, str] | None = None,
     watch: Path | None = None,
+    quiet: bool = False,
     stall_s: float = STALL_S,
     poll_s: float = POLL_S,
 ) -> int:
+    out = subprocess.DEVNULL if quiet else sys.stderr.fileno()
     try:
         proc = subprocess.Popen(
             list(cmd),
             cwd=cwd,
             env={**os.environ, **(env or {})},
             stdin=subprocess.DEVNULL,
-            stdout=sys.stderr.fileno(),
+            stdout=out,
+            stderr=subprocess.DEVNULL if quiet else None,
             start_new_session=True,  # Ctrl-C on a stall reaches the whole installer
         )
     except OSError as exc:
