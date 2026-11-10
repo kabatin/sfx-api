@@ -2,6 +2,8 @@
 
 **Make sound effects (and instrumental music) on your Apple Silicon Mac, as an HTTP job API.**
 
+> One of the local generation servers behind **[iXA Video Creator](https://github.com/kabatin/ixa-video-creator)**, which turns a song into a music video on one Apple Silicon Mac. It also works on its own.
+
 `sfx-api` is a small, safe job server around two text-to-sound-effect engines:
 [Stable Audio 3](https://github.com/Stability-AI/stable-audio-3) (its medium and sm-sfx models,
 Stability AI's own MLX build) and [MOSS-SoundEffect v2.0](https://huggingface.co/OpenMOSS-Team/MOSS-SoundEffect-v2.0)
