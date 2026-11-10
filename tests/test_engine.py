@@ -17,7 +17,7 @@ import numpy as np
 import pytest
 
 from sfx_api.backends.engine import EngineConfig, EngineError, ResidentEngine, worker_command
-from sfx_api.backends.process import PID_FILE
+from sfx_api.backends.process import PID_FILE, process_info
 from sfx_api.workers import sfx_worker_protocol as protocol
 
 FAKE_WORKER = Path(__file__).with_name("fake_worker.py")
@@ -274,6 +274,12 @@ def test_a_leftover_worker_is_reaped(tmp_path: Path, monkeypatch: pytest.MonkeyP
         start_new_session=True,
     )
     try:
+        # Popen returns before the child has exec'd: until then ``ps`` still shows the test
+        # runner's own command line, and the reaper rightly leaves such a pid alone
+        deadline = time.monotonic() + 10
+        while FAKE_WORKER.name not in (process_info(proc.pid) or ("", 0.0))[0]:
+            assert time.monotonic() < deadline, "the fake worker never started"
+            time.sleep(0.02)
         (state / PID_FILE).write_text(str(proc.pid))
         message = ResidentEngine(config(tmp_path)).reap_leftover()
         assert message == f"stopped leftover fake_worker.py (pid {proc.pid})"
